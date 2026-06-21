@@ -4,7 +4,7 @@
 //  Continent w/ ocean + coastline. Factions = Voronoi over CITIES.
 //  Sprites: MiniWorldSprites (CC0). Camera zoom/pan. Merchants walk road graph.
 // ============================================================
-const W = 720, H = 460;                 // world size in tiles
+const W = 960, H = 600;                 // world size in tiles
 const cv = document.getElementById('cv');
 const ctx = cv.getContext('2d');
 function fit(){ cv.width = innerWidth; cv.height = innerHeight; ctx.imageSmoothingEnabled = false; }
@@ -35,10 +35,10 @@ const PAL={
   deep:'#5e7d86', shallow:'#80a0a6', foam:'#b6cfd0',
   beach:'#dcd0a8', beachDk:'#c9bb8d',
   desert:'#d8c79a', desertDk:'#c6b384',
-  grass:['#7c9a3f','#88a548','#92b052','#73923a'], grassDk:'#6a8636',
-  forest:'#5b7d33', forestDk:'#4f6e2c',
+  grass:['#8a9a5c','#94a566','#9fb072','#7c8c4e'], grassDk:'#6f8048', // muted sage
+  forest:'#5f7438', forestDk:'#516229',
   hill:'#9a9266', hillDk:'#85794f',
-  rock:'#8d8b86', rockDk:'#73706b', snow:'#e7ecec',
+  rock:'#b8a784', rockDk:'#a8966f', snow:'#e7ecec',                  // warm tan massif (matches mountains)
   road:'#2c2c24', cart:'#b9852f',
   label:'#efe7cf', labelEdge:'#33302a', text:'#2a2620',
 };
@@ -288,7 +288,13 @@ cv.addEventListener('wheel',e=>{e.preventDefault();const[wx,wy]=s2w(e.clientX,e.
 // ============================================================
 //  RENDER
 // ============================================================
-function blit(fr,wx,wy){const[sx,sy]=w2s(wx,wy),z=cam.zoom;
+function blit(fr,wx,wy,shadow=true){const[sx,sy]=w2s(wx,wy),z=cam.zoom;
+  if(shadow){ // minimal pixel-shadow: chunky blocks (src-px = z) sitting on the ground below the base
+    ctx.fillStyle='rgba(18,22,14,0.40)';
+    const bw=fr.sw*0.80, bw2=bw*0.55;
+    ctx.fillRect(Math.round(sx-bw*z/2),  Math.round(sy),     Math.ceil(bw*z),  Math.ceil(z)); // band at base
+    ctx.fillRect(Math.round(sx-bw2*z/2), Math.round(sy+z),   Math.ceil(bw2*z), Math.ceil(z)); // sliver in front
+  }
   ctx.drawImage(fr.img,fr.sx,fr.sy,fr.sw,fr.sh,Math.round(sx-fr.ox*z),Math.round(sy-fr.oy*z),Math.ceil(fr.sw*z),Math.ceil(fr.sh*z));}
 function viewBounds(){const[x0,y0]=s2w(0,0),[x1,y1]=s2w(cv.width,cv.height);return{x0:x0-2,y0:y0-2,x1:x1+2,y1:y1+18};}
 function drawRoads(){ctx.strokeStyle=PAL.road;ctx.lineWidth=Math.max(1,cam.zoom*0.55);

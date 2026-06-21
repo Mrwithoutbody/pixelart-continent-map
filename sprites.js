@@ -3,7 +3,7 @@
 //  Shared globals: SPR (built sprite atlas), OUTL, buildSprites().
 //  Loaded before map.js (classic scripts share global scope).
 // ============================================================
-const SPR={house:null,hut:null,trees:[],bushes:[],hills:[],rocks:[],mountains:[],cart:null};
+const SPR={house:null,hut:null,trees:[],bushes:[],hills:[],rocks:[],mountains:[],cart:null,shadow:null};
 const OUTL='#20281f';                                   // shared black-ish outline
 
 // build a sprite from a char-grid + palette map. '.' = transparent. Anchor = bottom-center.
@@ -84,23 +84,54 @@ function bushSpriteSmall(){
 }
 
 // ---- landforms ----
-// wzgórze = smooth rounded grassy knoll, 3-tone shaded (light top -> shadow base)
-const HILL={K:OUTL,L:'#93b057',M:'#789843',S:'#5c7a33'};
-function moundSmall(){return pxSprite([
-  "...KKKKK...",
-  ".KLLLLLLLK.",
-  "KLLMMMMMLLK",
-  ".KMSSSSSMK.",
-  "..KKKKKKK..",
-],HILL);}
-function moundBig(){return pxSprite([
-  "....KKKKKKK....",
-  ".KKLLLLLLLLLKK.",
-  "KKLLLLLLLLLLLKK",
-  "KLLMMMMMMMMMLLK",
-  ".KMMSSSSSSSMMK.",
-  "..KKKKKKKKKKK..",
-],HILL);}
+// wzgórze = low, broad, asymmetric earthy knoll. flat-ish, contour line, dirt base, cast shadow.
+function makeHill(w){
+  const h=Math.round(w*0.46), H=h+1;                       // low profile + shadow row
+  const c=document.createElement('canvas');c.width=w;c.height=H;const x=c.getContext('2d');
+  const put=(X,Y,v)=>{x.fillStyle=v;x.fillRect(X,Y,1,1);};
+  const L='#9d9a62',M='#7c7a45',D='#5f5d33',DIRT='#6b5736',OUT='#2c3320',SH='#000000';
+  const px=Math.round(w*0.42), kL=h/px, kR=h/(w-1-px);     // asymmetric slopes
+  for(let X=0;X<w;X++){
+    const top=Math.round(X<px?(px-X)*kL:(X-px)*kR);
+    if(top>h-1) continue;
+    for(let Y=top;Y<h;Y++){
+      let v;
+      if(Y===top) v=OUT;                                   // silhouette
+      else if(Y===h-1) v=DIRT;                             // dirt foot
+      else if(Math.abs(Y-(top+Math.round((h-top)*0.55)))<1 && X>px-2 && X<w-2) v=D; // contour line
+      else v = X>px ? M : L;                               // light left / mid right
+      if(Y<top+2 && X>=px-1 && X<=px+1) v=L;               // small top highlight
+      put(X,Y,v);
+    }
+  }
+  for(let X=2;X<w-1;X++) put(X,H-1,SH);                    // soft ground shadow
+  return {img:c,sx:0,sy:0,sw:w,sh:H,ox:px,oy:h-1};
+}
+
+// mountain = asymmetric twin-ridge rocky peak. lit/shadow faces, crest, crevices, base shadow.
+function makeMountain(w){
+  const h=Math.round(w*0.95);
+  const c=document.createElement('canvas');c.width=w;c.height=h;const x=c.getContext('2d');
+  const put=(X,Y,v)=>{x.fillStyle=v;x.fillRect(X,Y,1,1);};
+  // warm tan/brown rock (cartographer look), clean ink outline, no noisy specks
+  const L='#c7b594',M='#a4906c',D='#6f5a3f',HI='#e2d6bd',OUT='#392c1f',SH='#4a3b29';
+  const p1={x:Math.round(w*0.42),y:0,k:1.85}, p2={x:Math.round(w*0.68),y:Math.round(h*0.36),k:2.0};
+  const line=(p,X)=>p.y+Math.abs(X-p.x)*p.k;
+  for(let X=0;X<w;X++){
+    const a=line(p1,X), b=line(p2,X), ctrl=a<=b?p1:p2, top=Math.round(Math.min(a,b));
+    if(top>h-1) continue;
+    for(let Y=top;Y<h;Y++){
+      let v;
+      if(Y===top) v=OUT;
+      else if(Y>=h-1) v=SH;                                          // base shadow
+      else if(Math.abs(X-ctrl.x)<=1 && Y<top+Math.round(h*0.5)) v=M; // crest band
+      else v = X>ctrl.x ? D : L;                                     // shadow right / lit left
+      if(ctrl===p1 && Y<top+2 && Math.abs(X-p1.x)<=1) v=HI;          // apex highlight
+      put(X,Y,v);
+    }
+  }
+  return {img:c,sx:0,sy:0,sw:w,sh:h,ox:p1.x,oy:h-1};
+}
 
 // small ground pebbles (drawn at the foot of mountains)
 function rockSpriteA(){return pxSprite([".KKK.","KLLSK","KKKKK"],{K:OUTL,L:'#a39c90',S:'#7d7668'});}
@@ -131,8 +162,8 @@ function buildSprites(){
   SPR.house=houseSprite(); SPR.hut=hutSprite();
   SPR.trees=[treeSprite(),pineSprite(),smallTreeSprite()];   // 2 species + sparse
   SPR.bushes=[bushSprite(),bushSpriteSmall()];
-  SPR.hills=[moundSmall(),moundBig()];                       // wide olive mounds
+  SPR.hills=[makeHill(13),makeHill(17)];
   SPR.rocks=[rockSpriteA(),rockSpriteB()];
-  SPR.mountains=[peakSprite(6),peakSprite(8),peakSprite(10)];
+  SPR.mountains=[makeMountain(16),makeMountain(20),makeMountain(26)];
   SPR.cart=cartSprite();
 }
