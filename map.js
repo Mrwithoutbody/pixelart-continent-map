@@ -52,87 +52,6 @@ const FACTIONS=[
   {name:'Marenth', key:'Purple', tint:[140,90,170],  border:'#48296a', flag:'#a84fd0'},
 ];
 
-// ============================================================
-//  ASSETS  (hand-drawn pixel sprites, styled to the example screenshots)
-// ============================================================
-const SPR={house:null,hut:null,trees:[],hill:null,mountain:null,cart:null};
-const OUTL='#20281f';                                   // shared black-ish outline
-// build a sprite from a char-grid + palette map. '.' = transparent.
-function pxSprite(rows,pal,oyBottom=true){
-  const w=rows[0].length,h=rows.length,c=document.createElement('canvas');
-  c.width=w;c.height=h;const x=c.getContext('2d');
-  for(let r=0;r<h;r++)for(let col=0;col<w;col++){const ch=rows[r][col];const p=pal[ch];
-    if(p){x.fillStyle=p;x.fillRect(col,r,1,1);}}
-  return {img:c,sx:0,sy:0,sw:w,sh:h,ox:w>>1,oy:oyBottom?h-1:h>>1};
-}
-// tiny house (~9x8): dark outline like trees, warm roof, door. Faction shown on the label, not here.
-function houseSprite(){
-  const pal={K:OUTL,A:'#cf7a4a',C:'#5a1c1c',H:'#bda85a',h:'#9c894a',E:'#3a230f'};
-  return pxSprite([
-    "..KKKKK..",
-    ".KAAAAAK.",
-    ".KCCCCCK.",
-    ".KKKKKKK.",
-    ".KHHHHHK.",
-    ".KHHEHHK.",
-    ".KhHEHhK.",
-    ".KKKKKKK.",
-  ],pal);
-}
-// smaller hut to fill out town clusters (~6x6)
-function hutSprite(){
-  const pal={K:OUTL,A:'#cf7a4a',C:'#5a1c1c',H:'#bda85a',E:'#3a230f'};
-  return pxSprite([
-    ".KKKK.",
-    "KAAAAK",
-    "KCCCCK",
-    "KHHHHK",
-    "KHEEHK",
-    "KKKKKK",
-  ],pal);
-}
-function treeSprite(){
-  const pal={K:OUTL,G:'#86a052',g:'#5f7f3a',T:'#6e4a2c'};
-  return pxSprite([
-    "...KKK...",
-    "..KGGGK..",
-    ".KGGGGGK.",
-    "KKGgggGKK",
-    "KGgggggGK",
-    "KGgggggGK",
-    ".KgggggK.",
-    "..KgggK..",
-    "...KTK...",
-    "...KTK...",
-    "..KKTKK..",
-  ],pal);
-}
-function smallTreeSprite(){
-  const pal={K:OUTL,g:'#5f7f3a',T:'#6e4a2c'};
-  return pxSprite([".KKK.","KgggK","KgggK",".KTK.","..K.."],pal);
-}
-// triangle hill/mountain: black ^ outline, light left face, shadow right face
-function triSprite(half,light,shadow){
-  const w=2*half+1,h=half+1,c=document.createElement('canvas');c.width=w;c.height=h;const x=c.getContext('2d');
-  const cx=half;
-  for(let r=0;r<h;r++){const span=Math.round((r/(h-1))*half);const l=cx-span,rt=cx+span;
-    for(let col=l+1;col<rt;col++){x.fillStyle=col>cx?shadow:light;x.fillRect(col,r,1,1);}
-    x.fillStyle=OUTL;x.fillRect(l,r,1,1);x.fillRect(rt,r,1,1);}
-  x.fillStyle=OUTL;for(let col=0;col<w;col++)x.fillRect(col,h-1,1,1); // base line
-  return {img:c,sx:0,sy:0,sw:w,sh:h,ox:half,oy:h-1};
-}
-function cartSprite(){
-  const pal={K:OUTL,C:'#c8842f',c:'#9c6318',Y:'#d8c38a'};
-  return pxSprite([".KKKKK.","KCCCCCK","KCYYYCK","KcccccK",".KKKKK.",".K...K."],pal);
-}
-const rgbHex=t=>'#'+t.map(v=>v.toString(16).padStart(2,'0')).join('');
-function buildSprites(){
-  SPR.house=houseSprite(); SPR.hut=hutSprite();
-  SPR.trees=[treeSprite(),smallTreeSprite()];
-  SPR.hill=triSprite(4,'#c2b894','#9d9170');
-  SPR.mountain=triSprite(6,'#bdb6ab','#928b80');
-  SPR.cart=cartSprite();
-}
 
 // ============================================================
 //  WORLD  (pure data + terrain model)
@@ -145,14 +64,14 @@ function townName(rng){let n=2+(rng()*2|0),s='';for(let i=0;i<n;i++)s+=SYL[rng()
 function buildCluster(cx,cy,n,rng,biome){
   const houses=[{x:cx,y:cy,spr:SPR.house}];
   const pass=(x,y)=>x>=0&&y>=0&&x<W&&y<H&&PASSABLE[biome[y*W+x]];
-  let R=2.2,att=0;
-  while(houses.length<n && att<n*60){att++;
-    const a=rng()*6.2832, rad=1.6+rng()*R;
-    const x=Math.round(cx+Math.cos(a)*rad), y=Math.round(cy+Math.sin(a)*rad*0.78);
+  let R=3.5,att=0;
+  while(houses.length<n && att<n*80){att++;
+    const a=rng()*6.2832, rad=2.6+rng()*R;
+    const x=Math.round(cx+Math.cos(a)*rad), y=Math.round(cy+Math.sin(a)*rad*0.8);
     if(!pass(x,y)) continue;
-    if(houses.some(h=>Math.abs(h.x-x)<2&&Math.abs(h.y-y)<2)) continue;
+    if(houses.some(h=>Math.abs(h.x-x)<4&&Math.abs(h.y-y)<4)) continue;   // wider spacing
     houses.push({x,y,spr:rng()<0.45?SPR.house:SPR.hut});
-    if(houses.length%3===0) R+=0.8;
+    if(houses.length%2===0) R+=1.2;
   }
   return houses;
 }
@@ -242,24 +161,35 @@ function genWorld(seed){
   const adj=cities.map(()=>[]); for(const[a,b]of edges){adj[a].push(b);adj[b].push(a);}
 
   // ---- decoration entities (consistent w/ biome) ----
-  const trees=[], hills=[];
-  for(let y=0;y<H;y+=1)for(let x=0;x<W;x+=1){
+  const trees=[], bushes=[], peaks=[], hills=[], rocks=[];
+  const M=BIOME.MOUNTAIN;
+  const nearMt=i=>biome[i-1]===M||biome[i+1]===M||biome[i-W]===M||biome[i+W]===M
+               ||biome[i-W-1]===M||biome[i-W+1]===M||biome[i+W-1]===M||biome[i+W+1]===M;
+  for(let y=1;y<H-1;y++)for(let x=1;x<W-1;x++){
     const i=y*W+x, b=biome[i];
     const det=nD(x/3,y/3);
-    if(b===BIOME.FOREST && rng()<0.10+det*0.10) trees.push({x:x+rng()*0.6-0.3,y});
-    else if(b===BIOME.GRASS && rng()<0.012) trees.push({x,y});
-    else if(b===BIOME.HILLS && rng()<0.06) hills.push({x,y,mountain:false});
-    else if(b===BIOME.MOUNTAIN && rng()<0.08) hills.push({x,y,mountain:true});
+    if(b===BIOME.FOREST && rng()<0.028+det*0.032) trees.push({x:x+rng()*0.6-0.3,y});
+    else if(b===BIOME.GRASS && rng()<0.007) trees.push({x,y});
+    else if(b===M && rng()<0.03) peaks.push({x,y});
+    else if(b===BIOME.HILLS){
+      if(nearMt(i)){ if(rng()<0.10) rocks.push({x,y}); }      // foot of mountains -> pebbles
+      else if(rng()<0.012) hills.push({x,y});                 // standalone foothills -> rounded knolls (sparse)
+    }
+    // bushes scattered on grass + forest floor
+    else if((b===BIOME.GRASS||b===BIOME.FOREST) && rng()<0.010) bushes.push({x,y});
   }
   for(const t of trees) t.spr=SPR.trees[(t.y*7+(t.x|0))%SPR.trees.length];
-  for(const h of hills) h.spr=h.mountain?SPR.mountain:SPR.hill;
+  for(const bsh of bushes) bsh.spr=SPR.bushes[(bsh.x+bsh.y)%SPR.bushes.length];
+  for(const p of peaks) p.spr=SPR.mountains[(p.x+p.y)%SPR.mountains.length];
+  for(const h of hills) h.spr=SPR.hills[(h.x+h.y)%SPR.hills.length];
+  for(const r of rocks) r.spr=SPR.rocks[(r.x+r.y)%SPR.rocks.length];
 
   // ---- merchants random-walk graph ----
   const merchants=[];
   for(let m=0;m<14 && cities.length>1;m++){const a=rng()*cities.length|0,nb=adj[a]; if(!nb.length)continue;
     merchants.push({a,b:nb[rng()*nb.length|0],t:rng(),speed:0.10+rng()*0.10});}
 
-  const world={seed,W,H,height,moist,biome,cost,fac,cities,edges,adj,merchants,trees,hills,
+  const world={seed,W,H,height,moist,biome,cost,fac,cities,edges,adj,merchants,trees,bushes,peaks,hills,rocks,
     bitmap:bakeTerrain(height,moist,biome,fac)};
   // ---- terrain-model API for future units ----
   world.idx=(x,y)=>((y|0)*W+(x|0));
@@ -383,7 +313,10 @@ function render(){
   ctx.drawImage(WORLD.bitmap,0,0,W,H,Math.round(ox),Math.round(oy),Math.ceil(W*cam.zoom),Math.ceil(H*cam.zoom));
   drawRoads();
   const vb=viewBounds(), ents=[];
+  for(const p of WORLD.peaks) if(p.x>=vb.x0&&p.x<=vb.x1&&p.y>=vb.y0&&p.y<=vb.y1) ents.push(p);
   for(const h of WORLD.hills) if(h.x>=vb.x0&&h.x<=vb.x1&&h.y>=vb.y0&&h.y<=vb.y1) ents.push(h);
+  for(const r of WORLD.rocks) if(r.x>=vb.x0&&r.x<=vb.x1&&r.y>=vb.y0&&r.y<=vb.y1) ents.push(r);
+  for(const bsh of WORLD.bushes) if(bsh.x>=vb.x0&&bsh.x<=vb.x1&&bsh.y>=vb.y0&&bsh.y<=vb.y1) ents.push(bsh);
   for(const t of WORLD.trees) if(t.x>=vb.x0&&t.x<=vb.x1&&t.y>=vb.y0&&t.y<=vb.y1) ents.push(t);
   for(const c of WORLD.cities)for(const h of c.houses)
     if(h.x>=vb.x0&&h.x<=vb.x1&&h.y>=vb.y0&&h.y<=vb.y1) ents.push(h);
