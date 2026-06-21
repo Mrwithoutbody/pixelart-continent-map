@@ -1,0 +1,5 @@
+example*.png
+shot*.png
+*.zip
+assets_raw/
+node_modules/

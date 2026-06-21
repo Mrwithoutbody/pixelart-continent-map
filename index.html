@@ -1,0 +1,25 @@
+<!DOCTYPE html>
+<html lang="pl">
+<head>
+<meta charset="utf-8">
+<title>Pixelart Map Game</title>
+<style>
+  html,body{margin:0;height:100%;overflow:hidden;background:#2b2f2b;font-family:monospace}
+  canvas{display:block;image-rendering:pixelated;cursor:grab}
+  canvas:active{cursor:grabbing}
+  #ui{position:fixed;top:10px;left:10px;color:#cfe;font-size:12px;background:#0008;padding:8px 10px;border-radius:6px;line-height:1.6;pointer-events:none}
+  #ui b{color:#9d6}
+  button{font-family:monospace;cursor:pointer;background:#2c3;border:0;padding:3px 8px;border-radius:4px;pointer-events:auto}
+</style>
+</head>
+<body>
+<div id="ui">
+  <b>PIXELART MAP GAME</b><br>
+  scroll = zoom · drag = przesuń mapę<br>
+  frakcje (granice kolorowe) · drogi = graf · kupcy chodzą po drogach<br>
+  <button onclick="regen()">↻ regenerate (R)</button> seed: <span id="seed">0</span>
+</div>
+<canvas id="cv"></canvas>
+<script src="map.js"></script>
+</body>
+</html>
