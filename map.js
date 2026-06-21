@@ -4,7 +4,7 @@
 //  Continent w/ ocean + coastline. Factions = Voronoi over CITIES.
 //  Sprites: MiniWorldSprites (CC0). Camera zoom/pan. Merchants walk road graph.
 // ============================================================
-const W = 960, H = 600;                 // world size in tiles
+const W = 1240, H = 780;                 // world size in tiles (bigger -> towns less cramped)
 const cv = document.getElementById('cv');
 const ctx = cv.getContext('2d');
 function fit(){ cv.width = innerWidth; cv.height = innerHeight; ctx.imageSmoothingEnabled = false; }
@@ -52,6 +52,14 @@ const FACTIONS=[
   {name:'Marenth', key:'Purple', tint:[140,90,170],  border:'#48296a', flag:'#a84fd0'},
 ];
 
+// economy buildings (subset of ECONOMY.md) placed in/around a town based on nearby biomes
+const BLD={
+  farm:{name:'Farma'}, lumber_camp:{name:'Obóz drwali'}, mine:{name:'Kopalnia'},
+  quarry:{name:'Kamieniołom'}, fishery:{name:'Przystań'}, salt_works:{name:'Warzelnia'},
+  mill:{name:'Młyn'}, sawmill:{name:'Tartak'}, smelter:{name:'Huta'},
+  warehouse:{name:'Magazyn'}, market:{name:'Targ'}, harbor:{name:'Port'},
+};
+
 
 // ============================================================
 //  WORLD  (pure data + terrain model)
@@ -74,6 +82,38 @@ function buildCluster(cx,cy,n,rng,biome){
     if(houses.length%2===0) R+=1.2;
   }
   return houses;
+}
+// which economy buildings a town gets, from biomes within reach
+function cityEconomy(c,biome){
+  const RAD=16,cnt={F:0,G:0,M:0,H:0,W:0,D:0};
+  for(let dy=-RAD;dy<=RAD;dy++)for(let dx=-RAD;dx<=RAD;dx++){
+    if(dx*dx+dy*dy>RAD*RAD)continue;
+    const x=c.x+dx,y=c.y+dy; if(x<0||y<0||x>=W||y>=H)continue;
+    const b=biome[y*W+x];
+    if(b===BIOME.FOREST)cnt.F++; else if(b===BIOME.GRASS)cnt.G++;
+    else if(b===BIOME.MOUNTAIN)cnt.M++; else if(b===BIOME.HILLS)cnt.H++;
+    else if(b<=BIOME.SHALLOW)cnt.W++; else if(b===BIOME.DESERT)cnt.D++; }
+  const out=[],TH=14;
+  if(cnt.G>TH)out.push('farm','mill');
+  if(cnt.F>TH)out.push('lumber_camp','sawmill');
+  if(cnt.M>TH)out.push('mine','smelter');
+  if(cnt.H>TH)out.push('quarry');
+  if(cnt.W>4)out.push('fishery');
+  if(cnt.D>TH)out.push('salt_works');
+  out.push('warehouse'); if(c.pop>900)out.push('market'); if(cnt.W>6)out.push('harbor');
+  const cap=Math.max(2,Math.min(out.length,2+Math.round(c.pop/450)));   // bigger town = more
+  return out.slice(0,cap);
+}
+function placeEconomy(c,biome,rng){
+  const placed=[];
+  for(const id of cityEconomy(c,biome)){ let put=null;
+    for(let k=0;k<50 && !put;k++){const a=rng()*6.2832,rad=4+rng()*6;
+      const x=Math.round(c.x+Math.cos(a)*rad),y=Math.round(c.y+Math.sin(a)*rad*0.8);
+      if(!(x>=0&&y>=0&&x<W&&y<H&&PASSABLE[biome[y*W+x]]))continue;
+      if(c.houses.concat(placed).some(b=>Math.abs(b.x-x)<3&&Math.abs(b.y-y)<3))continue;
+      put={x,y}; }
+    if(put)placed.push({x:put.x,y:put.y,spr:SPR.workshop,id,name:BLD[id].name}); }
+  return placed;
 }
 function genWorld(seed){
   const rng=mulberry32(seed);
@@ -136,8 +176,13 @@ function genWorld(seed){
     c.pop=Math.round((0.2+rng()*rng()*3)*1000);                 // skewed: most towns small
     const n=Math.max(1,Math.min(12,1+Math.round(c.pop/350)));   // houses scale w/ population
     c.houses=buildCluster(c.x,c.y,n,rng,biome);
-    c.r=c.houses.reduce((m,h)=>Math.max(m,Math.hypot(h.x-c.x,h.y-c.y)),1.5);
-    c.minY=c.houses.reduce((m,h)=>Math.min(m,h.y),c.y);
+    // residential composition: centre = best tier the population affords, rest = dom/chata
+    const tier=c.pop>2200?'manor':c.pop>1100?'townhouse':'house';
+    c.houses.forEach((h,i)=>{ h.btype = i===0?tier : (h.spr===SPR.hut?'shack':'house'); });
+    c.builds=placeEconomy(c,biome,rng);                        // economy buildings on the outskirts
+    const all=c.houses.concat(c.builds);
+    c.r=all.reduce((m,h)=>Math.max(m,Math.hypot(h.x-c.x,h.y-c.y)),1.5);
+    c.minY=all.reduce((m,h)=>Math.min(m,h.y),c.y);
   }
 
   // ---- territory: each LAND tile owned by nearest city -> its faction ----
@@ -149,15 +194,21 @@ function genWorld(seed){
     fac[i]=bf;
   }
 
-  // ---- roads: MST over all cities + few extra links (trade net) ----
-  const edges=[],inT=[0],out=cities.map((_,i)=>i).slice(1);
-  while(out.length){let best=null;
-    for(const a of inT)for(const bi of out){const dd=Math.hypot(cities[a].x-cities[bi].x,cities[a].y-cities[bi].y);
-      if(!best||dd<best.d)best={a,b:bi,d:dd};}
-    edges.push([best.a,best.b]);inT.push(best.b);out.splice(out.indexOf(best.b),1);}
-  for(let e=0;e<cities.length/4;e++){const a=rng()*cities.length|0,b=rng()*cities.length|0;
-    if(a!==b && Math.hypot(cities[a].x-cities[b].x,cities[a].y-cities[b].y)<60 &&
-       !edges.some(([p,q])=>(p===a&&q===b)||(p===b&&q===a))) edges.push([a,b]);}
+  // ---- roads: land only (no water crossing) -> spanning forest per landmass (Kruskal) ----
+  const crossesWater=(a,b)=>{const A=cities[a],B=cities[b],d=Math.hypot(B.x-A.x,B.y-A.y),n=Math.max(1,Math.round(d));
+    for(let i=0;i<=n;i++){const t=i/n,x=(A.x+(B.x-A.x)*t)|0,y=(A.y+(B.y-A.y)*t)|0;
+      if(biome[y*W+x]<=BIOME.SHALLOW) return true;}            // touches water -> invalid
+    return false;};
+  const cand=[];
+  for(let a=0;a<cities.length;a++)for(let b=a+1;b<cities.length;b++){
+    if(!crossesWater(a,b)) cand.push([Math.hypot(cities[a].x-cities[b].x,cities[a].y-cities[b].y),a,b]);}
+  cand.sort((p,q)=>p[0]-q[0]);
+  const par=cities.map((_,i)=>i), find=i=>{while(par[i]!==i){par[i]=par[par[i]];i=par[i];}return i;};
+  const edges=[];
+  for(const[d,a,b]of cand){const ra=find(a),rb=find(b); if(ra!==rb){par[ra]=rb;edges.push([a,b]);}} // MST forest
+  let extra=0;                                                  // a few short loop links within land
+  for(const[d,a,b]of cand){ if(extra>=cities.length/5)break;
+    if(d<70 && !edges.some(([p,q])=>(p===a&&q===b)||(p===b&&q===a))){edges.push([a,b]);extra++;}}
   const adj=cities.map(()=>[]); for(const[a,b]of edges){adj[a].push(b);adj[b].push(a);}
 
   // ---- decoration entities (consistent w/ biome) ----
@@ -168,15 +219,15 @@ function genWorld(seed){
   for(let y=1;y<H-1;y++)for(let x=1;x<W-1;x++){
     const i=y*W+x, b=biome[i];
     const det=nD(x/3,y/3);
-    if(b===BIOME.FOREST && rng()<0.028+det*0.032) trees.push({x:x+rng()*0.6-0.3,y});
-    else if(b===BIOME.GRASS && rng()<0.007) trees.push({x,y});
-    else if(b===M && rng()<0.03) peaks.push({x,y});
+    if(b===BIOME.FOREST && rng()<0.017+det*0.019) trees.push({x:x+rng()*0.6-0.3,y});
+    else if(b===BIOME.GRASS && rng()<0.0042) trees.push({x,y});
+    else if(b===M && rng()<0.018) peaks.push({x,y});
     else if(b===BIOME.HILLS){
-      if(nearMt(i)){ if(rng()<0.10) rocks.push({x,y}); }      // foot of mountains -> pebbles
-      else if(rng()<0.012) hills.push({x,y});                 // standalone foothills -> rounded knolls (sparse)
+      if(nearMt(i)){ if(rng()<0.06) rocks.push({x,y}); }      // foot of mountains -> pebbles
+      else if(rng()<0.0072) hills.push({x,y});                // standalone foothills -> rounded knolls (sparse)
     }
     // bushes scattered on grass + forest floor
-    else if((b===BIOME.GRASS||b===BIOME.FOREST) && rng()<0.010) bushes.push({x,y});
+    else if((b===BIOME.GRASS||b===BIOME.FOREST) && rng()<0.006) bushes.push({x,y});
   }
   for(const t of trees) t.spr=SPR.trees[(t.y*7+(t.x|0))%SPR.trees.length];
   for(const bsh of bushes) bsh.spr=SPR.bushes[(bsh.x+bsh.y)%SPR.bushes.length];
@@ -184,13 +235,51 @@ function genWorld(seed){
   for(const h of hills) h.spr=SPR.hills[(h.x+h.y)%SPR.hills.length];
   for(const r of rocks) r.spr=SPR.rocks[(r.x+r.y)%SPR.rocks.length];
 
-  // ---- merchants random-walk graph ----
-  const merchants=[];
-  for(let m=0;m<14 && cities.length>1;m++){const a=rng()*cities.length|0,nb=adj[a]; if(!nb.length)continue;
-    merchants.push({a,b:nb[rng()*nb.length|0],t:rng(),speed:0.10+rng()*0.10});}
+  // ---- ports + sea network ---- (isWater defined above)
+  for(const c of cities){ c.port=false; c.dock=null;          // dock = nearest water tile
+    for(let r=1;r<=5 && !c.dock;r++) for(let dy=-r;dy<=r && !c.dock;dy++) for(let dx=-r;dx<=r;dx++){
+      const x=c.x+dx,y=c.y+dy; if(x<1||y<1||x>=W-1||y>=H-1)continue;
+      if(isWater(y*W+x)){ c.port=true; c.dock={x,y}; break; } } }
+  const straightWater=(p,q)=>{const d=Math.hypot(q.x-p.x,q.y-p.y),n=Math.max(1,Math.round(d));
+    for(let i=0;i<=n;i++){const t=i/n,x=(p.x+(q.x-p.x)*t)|0,y=(p.y+(q.y-p.y)*t)|0;
+      if(!isWater(y*W+x)) return false;} return true;};                 // shortest sea lane = straight, all-water
+  // combined graph: land roads + sea lanes between ports
+  const cadj=cities.map(()=>[]);
+  for(const[a,b]of edges){cadj[a].push({to:b,mode:'land'});cadj[b].push({to:a,mode:'land'});}
+  const ports=cities.map((_,i)=>i).filter(i=>cities[i].port);
+  for(let i=0;i<ports.length;i++)for(let j=i+1;j<ports.length;j++){const a=ports[i],b=ports[j];
+    if(Math.hypot(cities[a].x-cities[b].x,cities[a].y-cities[b].y)<260 && straightWater(cities[a].dock,cities[b].dock)){
+      cadj[a].push({to:b,mode:'sea'});cadj[b].push({to:a,mode:'sea'});}}
 
-  const world={seed,W,H,height,moist,biome,cost,fac,cities,edges,adj,merchants,trees,bushes,peaks,hills,rocks,
+  // ---- route planning (caravan: land legs as cart, sea legs as ship) ----
+  const reachableFrom=h=>{const seen=new Set([h]),q=[h],out=[];while(q.length){const u=q.shift();
+    for(const e of cadj[u])if(!seen.has(e.to)){seen.add(e.to);out.push(e.to);q.push(e.to);}}return out;};
+  const planRoute=(s,t)=>{if(s===t)return[];const prev=new Map([[s,null]]),q=[s];
+    while(q.length){const u=q.shift();if(u===t)break;
+      for(const e of cadj[u])if(!prev.has(e.to))prev.set(e.to,{from:u,mode:e.mode}),q.push(e.to);}
+    if(!prev.has(t))return null;const seq=[];let cur=t;
+    while(prev.get(cur)){const p=prev.get(cur);seq.unshift({from:p.from,to:cur,mode:p.mode});cur=p.from;}return seq;};
+  const segmentsFor=route=>{const segs=[];for(const e of route){const A=cities[e.from],B=cities[e.to];
+    if(e.mode==='land'){segs.push({x0:A.x,y0:A.y,x1:B.x,y1:B.y,mode:'land'});}
+    else{ segs.push({x0:A.x,y0:A.y,x1:A.dock.x,y1:A.dock.y,mode:'sea'});       // walk to dock, then sail, then to town
+          segs.push({x0:A.dock.x,y0:A.dock.y,x1:B.dock.x,y1:B.dock.y,mode:'sea'});
+          segs.push({x0:B.dock.x,y0:B.dock.y,x1:B.x,y1:B.y,mode:'sea'}); }}
+    for(const s of segs)s.len=Math.hypot(s.x1-s.x0,s.y1-s.y0)||1;return segs;};
+
+  // ---- merchants: caravans with a destination, multi-modal route ----
+  const merchants=[];
+  for(let m=0;m<18;m++){const home=rng()*cities.length|0,reach=reachableFrom(home);if(!reach.length)continue;
+    const dest=reach[rng()*reach.length|0],route=planRoute(home,dest);if(!route||!route.length)continue;
+    merchants.push({home,dest,f:rng()<0.5?cities[home].f:-1,segs:segmentsFor(route),si:0,t:rng(),speed:0.10+rng()*0.10});}
+
+  const world={seed,W,H,height,moist,biome,cost,fac,cities,edges,adj,cadj,merchants,trees,bushes,peaks,hills,rocks,
     bitmap:bakeTerrain(height,moist,biome,fac)};
+  // runtime route replanning (called when a caravan reaches its destination)
+  world.replan=m=>{const home=m.dest,reach=reachableFrom(home);
+    if(!reach.length){m.si=0;m.t=0;return;}
+    const dest=reach[(Math.random()*reach.length)|0],route=planRoute(home,dest);
+    if(!route){m.si=0;m.t=0;return;}
+    m.home=home;m.dest=dest;m.segs=segmentsFor(route);m.si=0;m.t=0;};
   // ---- terrain-model API for future units ----
   world.idx=(x,y)=>((y|0)*W+(x|0));
   world.inBounds=(x,y)=>x>=0&&y>=0&&x<W&&y<H;
@@ -264,6 +353,7 @@ addEventListener('mousemove',e=>{if(!drag)return;cam.x=drag.cx-(e.clientX-drag.s
 // ---- selection + city info panel ----
 let selected=null;
 const BIOME_NAME=['ocean','płycizna','plaża','pustynia','trawa','las','wzgórza','góry'];
+const RES_NAME={manor:'Dwór',townhouse:'Kamienica',house:'Dom',shack:'Chata'};
 const info=document.createElement('div'); info.id='info';
 info.style.cssText='position:fixed;top:10px;right:10px;min-width:160px;color:#e8f0e0;background:#0b0d0bdd;'
   +'border:1px solid #3c4a36;border-radius:8px;padding:10px 12px;font:12px/1.7 monospace;display:none;z-index:5';
@@ -274,13 +364,17 @@ function pickCity(sx,sy){ if(!WORLD)return; const[wx,wy]=s2w(sx,sy); let best=nu
   selected=best; updateInfo(); }
 function updateInfo(){ if(selected==null||!WORLD){info.style.display='none';return;}
   const c=WORLD.cities[selected],f=FACTIONS[c.f];
+  const comp={}; for(const h of c.houses) comp[h.btype]=(comp[h.btype]||0)+1;
+  const compRows=['manor','townhouse','house','shack'].filter(k=>comp[k])
+    .map(k=>`&nbsp;&nbsp;${RES_NAME[k]}: <b>${comp[k]}</b>`).join('<br>');
   info.style.display='block';
   info.innerHTML=`<b style="font-size:13px">${c.name}</b>`
     +`<br><span style="display:inline-block;width:9px;height:9px;background:${f.flag};border:1px solid #000;vertical-align:-1px"></span> ${f.name}`
+    +(c.port?`&nbsp;⚓`:'')
     +`<br>populacja: <b>${c.pop.toLocaleString('pl')}</b>`
-    +`<br>domy: ${c.houses.length}`
-    +`<br>biom: ${BIOME_NAME[WORLD.biomeAt(c.x,c.y)]}`
-    +`<br>drogi: ${WORLD.adj[selected].length}`
+    +`<br>biom: ${BIOME_NAME[WORLD.biomeAt(c.x,c.y)]} · drogi: ${WORLD.adj[selected].length}`
+    +`<br><span style="opacity:.7">mieszkalne (${c.houses.length}):</span><br>${compRows}`
+    +`<br><span style="opacity:.7">gospodarka (${c.builds.length}):</span><br>&nbsp;&nbsp;${c.builds.length?c.builds.map(b=>b.name).join('<br>&nbsp;&nbsp;'):'—'}`
     +`<br><span style="opacity:.5">klik na pustym = odznacz</span>`; }
 cv.addEventListener('wheel',e=>{e.preventDefault();const[wx,wy]=s2w(e.clientX,e.clientY);
   cam.zoom*=e.deltaY<0?1.12:1/1.12;clampCam();const[nx,ny]=s2w(e.clientX,e.clientY);cam.x+=wx-nx;cam.y+=wy-ny;clampCam();},{passive:false});
@@ -324,13 +418,23 @@ function render(){
   for(const r of WORLD.rocks) if(r.x>=vb.x0&&r.x<=vb.x1&&r.y>=vb.y0&&r.y<=vb.y1) ents.push(r);
   for(const bsh of WORLD.bushes) if(bsh.x>=vb.x0&&bsh.x<=vb.x1&&bsh.y>=vb.y0&&bsh.y<=vb.y1) ents.push(bsh);
   for(const t of WORLD.trees) if(t.x>=vb.x0&&t.x<=vb.x1&&t.y>=vb.y0&&t.y<=vb.y1) ents.push(t);
-  for(const c of WORLD.cities)for(const h of c.houses)
-    if(h.x>=vb.x0&&h.x<=vb.x1&&h.y>=vb.y0&&h.y<=vb.y1) ents.push(h);
+  for(const c of WORLD.cities){
+    for(const h of c.houses) if(h.x>=vb.x0&&h.x<=vb.x1&&h.y>=vb.y0&&h.y<=vb.y1) ents.push(h);
+    for(const b of c.builds) if(b.x>=vb.x0&&b.x<=vb.x1&&b.y>=vb.y0&&b.y<=vb.y1) ents.push(b);
+  }
   ents.sort((a,b)=>a.y-b.y);
   for(const e of ents) blit(e.spr,e.x,e.y);
-  for(const m of WORLD.merchants){const A=WORLD.cities[m.a],B=WORLD.cities[m.b];
-    const mx=A.x+(B.x-A.x)*m.t,my=A.y+(B.y-A.y)*m.t;
-    if(mx>=vb.x0&&mx<=vb.x1&&my>=vb.y0&&my<=vb.y1) blit(SPR.cart,mx,my);}
+  for(const m of WORLD.merchants){ if(!m.segs.length)continue;
+    const s=m.segs[Math.min(m.si,m.segs.length-1)];
+    const mx=s.x0+(s.x1-s.x0)*m.t, my=s.y0+(s.y1-s.y0)*m.t;
+    if(mx<vb.x0||mx>vb.x1||my<vb.y0||my>vb.y1) continue;
+    const spr = s.mode==='sea'?SPR.ship:SPR.cart;              // caravan turns into a ship on water legs
+    blit(spr,mx,my);
+    if(m.f>=0){ // faction-owned convoy -> flag in faction colour
+      const z=cam.zoom,[sx,sy]=w2s(mx,my), top=Math.round(sy-(spr.sh+1)*z);
+      ctx.fillStyle=OUTL; ctx.fillRect(Math.round(sx),top,Math.max(1,Math.round(z*0.5)),Math.ceil(z*3));
+      ctx.fillStyle=FACTIONS[m.f].flag; ctx.fillRect(Math.round(sx),top,Math.ceil(z*2),Math.ceil(z*1.5));
+    }}
   if(selected!=null){const c=WORLD.cities[selected];const[sx,sy]=w2s(c.x,c.y);
     ctx.strokeStyle='#ffe66d';ctx.lineWidth=2;ctx.setLineDash([6,4]);
     ctx.beginPath();ctx.arc(sx,sy,(c.r+3)*cam.zoom,0,6.2832);ctx.stroke();ctx.setLineDash([]);}
@@ -342,9 +446,9 @@ function render(){
 // ============================================================
 let last=performance.now();
 function tick(now){const dt=Math.min(0.05,(now-last)/1000);last=now;
-  for(const m of WORLD.merchants){const A=WORLD.cities[m.a],B=WORLD.cities[m.b];
-    const len=Math.hypot(B.x-A.x,B.y-A.y)||1; m.t+=m.speed*dt*20/len;
-    if(m.t>=1){m.t=0;const nb=WORLD.adj[m.b].filter(n=>n!==m.a);const nx=nb.length?nb:WORLD.adj[m.b];m.a=m.b;m.b=nx[(Math.random()*nx.length)|0];}}
+  for(const m of WORLD.merchants){ if(!m.segs.length)continue;
+    const s=m.segs[m.si]; m.t+=m.speed*dt*20/s.len;
+    if(m.t>=1){ m.t=0; m.si++; if(m.si>=m.segs.length) WORLD.replan(m); }}
   render();requestAnimationFrame(tick);}
 
 // ---------- boot ----------

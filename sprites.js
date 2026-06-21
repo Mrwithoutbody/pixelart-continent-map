@@ -3,7 +3,7 @@
 //  Shared globals: SPR (built sprite atlas), OUTL, buildSprites().
 //  Loaded before map.js (classic scripts share global scope).
 // ============================================================
-const SPR={house:null,hut:null,trees:[],bushes:[],hills:[],rocks:[],mountains:[],cart:null,shadow:null};
+const SPR={house:null,hut:null,workshop:null,trees:[],bushes:[],hills:[],rocks:[],mountains:[],cart:null,ship:null,shadow:null};
 const OUTL='#20281f';                                   // shared black-ish outline
 
 // build a sprite from a char-grid + palette map. '.' = transparent. Anchor = bottom-center.
@@ -37,6 +37,20 @@ function hutSprite(){                // ~6x6: smaller filler house for clusters
     "KHEEHK",
     "KKKKKK",
   ],{K:OUTL,A:'#cf7a4a',C:'#5a1c1c',H:'#bda85a',E:'#3a230f'});
+}
+// economy building (workshop): slate roof + chimney, distinct from warm residential roofs
+function workshopSprite(){
+  return pxSprite([
+    "..K......",
+    "..K......",
+    "..KKKKK..",
+    ".KAAAAAK.",
+    ".KCCCCCK.",
+    ".KKKKKKK.",
+    ".KHHHHHK.",
+    ".KHHEHHK.",
+    ".KKKKKKK.",
+  ],{K:OUTL,A:'#62737d',C:'#42515a',H:'#9a948a',E:'#3a230f'});
 }
 
 // ---- vegetation ----
@@ -152,18 +166,31 @@ function peakSprite(half){
   return {img:c,sx:0,sy:0,sw:w,sh:h,ox:half,oy:h-1};
 }
 
-// ---- merchant ----
+// ---- transport units ----
 function cartSprite(){
   return pxSprite([".KKKKK.","KCCCCCK","KCYYYCK","KcccccK",".KKKKK.",".K...K."],
     {K:OUTL,C:'#c8842f',c:'#9c6318',Y:'#d8c38a'});
 }
+function shipSprite(){     // small sailboat (sea leg of a caravan)
+  return pxSprite([
+    "...K.....",
+    "...KW....",
+    "...KWW...",
+    "...KWWW..",
+    "...K.....",
+    ".HHHHHHH.",
+    "KhhhhhhhK",
+    ".KhhhhK..",
+    "..KKKK...",
+  ],{K:OUTL,W:'#e8e2d0',H:'#7a5230',h:'#5e3f22'});
+}
 
 function buildSprites(){
-  SPR.house=houseSprite(); SPR.hut=hutSprite();
+  SPR.house=houseSprite(); SPR.hut=hutSprite(); SPR.workshop=workshopSprite();
   SPR.trees=[treeSprite(),pineSprite(),smallTreeSprite()];   // 2 species + sparse
   SPR.bushes=[bushSprite(),bushSpriteSmall()];
   SPR.hills=[makeHill(13),makeHill(17)];
   SPR.rocks=[rockSpriteA(),rockSpriteB()];
   SPR.mountains=[makeMountain(16),makeMountain(20),makeMountain(26)];
-  SPR.cart=cartSprite();
+  SPR.cart=cartSprite(); SPR.ship=shipSprite();
 }
