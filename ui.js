@@ -54,10 +54,28 @@ const UI=(()=>{
     newGame(){ runGen(readSeed()); },
     randomSeed(){ seedIn.value=String((Math.random()*1e9)>>>0); },
     regenInGame(){ regen(); },                 // HUD "new map" — keep current camera
-    toStart(){ clearCity(); setScreen('start'); },
+    toStart(){ clearCity(); document.getElementById('chronicle').classList.remove('open'); setScreen('start'); },
     toGame(){ setScreen('game'); },
+    toggleChronicle(){ const el=document.getElementById('chronicle'); renderChronicle(); el.classList.toggle('open'); },
   };
 })();
+
+// build the chronicle panel (houses + relations + events) from the current world. Global so
+// map.js's regen() can refresh it after a new map; UI.toggleChronicle() shows/hides it.
+function renderChronicle(){
+  const el=document.getElementById('chronicle'); if(!el||!WORLD||!WORLD.houses)return;
+  const H=WORLD.houses, R=WORLD.relations||[], E=WORLD.events||[];
+  const relName={wojna:'⚔ wojna',sojusz:'🤝 sojusz',rywalizacja:'⚑ rywalizacja',pokój:'pokój'};
+  let h=`<div class="ihead"><span class="nm">KRONIKI</span><span class="x" onclick="UI.toggleChronicle()">✕</span></div><div class="ibody">`;
+  h+=`<div class="sect">rody (${H.length})</div>`;
+  for(const o of H) h+=`<div class="hrow"><span class="sw" style="background:${o.color}"></span> <b>Ród ${o.name}</b> — ${o.seat}`
+    +`<br><span class="dim">„${o.motto}” · ${o.trait} · ${o.role} · ${o.towns} miast · zał. ${o.founded}</span></div>`;
+  const wars=R.filter(r=>r.rel!=='pokój');
+  if(wars.length){ h+=`<div class="sect">stosunki</div>`;
+    for(const r of wars) h+=`<div class="li"><span>${H[r.a].name} — ${H[r.b].name}</span><span>${relName[r.rel]}</span></div>`; }
+  if(E.length){ h+=`<div class="sect">kronika</div>`; for(const e of E) h+=`<div class="ev">${e}</div>`; }
+  h+=`</div>`; el.innerHTML=h;
+}
 
 // boot: start screen by default. Dev deep-links: #game jumps straight in,
 // #city opens the busiest city's panel, #map shows a zoomed-out overview.

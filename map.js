@@ -32,6 +32,7 @@ function segCross(a,b,c,d){const s=(p,q,r)=>(q.x-p.x)*(r.y-p.y)-(q.y-p.y)*(r.x-p
 
 // ---------- tunables ----------
 const MAX_BRIDGE=7;                          // widest water span (tiles) a road bridge may cross
+const MIN_CITY_DIST=64;                      // smallest allowed gap between any two towns (tiles)
 
 // ---------- biomes + terrain coefficients ----------
 const BIOME={DEEP:0,SHALLOW:1,BEACH:2,DESERT:3,GRASS:4,FOREST:5,HILLS:6,MOUNTAIN:7};
@@ -110,11 +111,11 @@ function cityEconomy(c,biome){
   if(cnt.H>TH)out.push('quarry');
   if(cnt.W>4)out.push('fishery');
   if(cnt.D>TH)out.push('salt_works');
-  out.push('warehouse'); if(c.pop>900)out.push('market'); if(cnt.W>6)out.push('harbor');
-  const cap=Math.max(2,Math.min(out.length,2+Math.round(c.pop/450)));   // bigger town = more
+  out.push('warehouse'); if(c.pop>600)out.push('market'); if(cnt.W>6)out.push('harbor');
+  const cap=Math.max(2,Math.min(out.length,2+Math.round(c.pop/220)));   // bigger town = more
   const res=out.slice(0,cap);
-  if(c.pop>1500) res.push('chapel');                                    // landmarks always show
-  if(c.pop>2500||cnt.W>6) res.push('tower');
+  if(c.seat) res.push('chapel');                                        // a seat anchors a chapel
+  if(c.seat&&(cnt.M>10||c.pop>1000)) res.push('tower');                 // ...and a watchtower if strong
   return res;
 }
 function placeEconomy(c,biome,rng){
@@ -251,72 +252,70 @@ function genWorld(seed){
   const fields=[];
   const buildable=i=>{const b=biome[i];return b===BIOME.GRASS||b===BIOME.BEACH||b===BIOME.DESERT;};
   const onLand=(x,y)=>{x|=0;y|=0;return x>=1&&y>=1&&x<W-1&&y<H-1&&buildable(y*W+x);};
-  // spanPts: straight-line water test. null if a water run is too wide to bridge, else {d,bridgeTiles,spans}.
+  // spanPts: straight-line terrain test. null if a water run is too wide to bridge, else
+  // {d,bridgeTiles,spans,mtn} where mtn = mountain tiles crossed (roads prefer to skirt them).
   const spanPts=(ax,ay,bx,by)=>{const d=Math.hypot(bx-ax,by-ay),n=Math.max(1,Math.round(d));
-    const spans=[]; let run=0,runStart=0,bridgeTiles=0;
+    const spans=[]; let run=0,runStart=0,bridgeTiles=0,mtn=0,frst=0;
     const at=t=>({x:ax+(bx-ax)*t,y:ay+(by-ay)*t});
     const closeRun=endI=>{ if(run*d/n>MAX_BRIDGE) return false;
       const p0=at(Math.max(0,runStart-1)/n), p1=at(Math.min(n,endI)/n);
       spans.push({x0:p0.x,y0:p0.y,x1:p1.x,y1:p1.y}); bridgeTiles+=run; run=0; return true; };
     for(let i=0;i<=n;i++){const p=at(i/n),x=p.x|0,y=p.y|0;
       if(x<0||y<0||x>=W||y>=H){ if(run>0&&!closeRun(i))return null; continue; }
-      if(biome[y*W+x]<=BIOME.SHALLOW){ if(run===0)runStart=i; run++; }
-      else if(run>0 && !closeRun(i)) return null; }
+      const b=biome[y*W+x];
+      if(b<=BIOME.SHALLOW){ if(run===0)runStart=i; run++; }
+      else { if(run>0 && !closeRun(i)) return null; if(b===BIOME.MOUNTAIN) mtn++; else if(b===BIOME.FOREST) frst++; } }
     if(run>0 && !closeRun(n)) return null;
-    return {d,bridgeTiles,spans};
+    return {d,bridgeTiles,spans,mtn,frst};
   };
   const F=Math.min(FACTIONS.length,8);
-  // farthest-point pick: a buildable spot maximally far from the towns placed so far
-  const spreadSpot=arr=>{ let best=null,bd=-1;
+  // farthest-point pick: a buildable spot maximally far from the towns placed so far,
+  // rejected if it can't even clear the minimum town spacing.
+  const spreadSpot=(arr,floor=MIN_CITY_DIST)=>{ let best=null,bd=-1;
     for(let k=0;k<500;k++){ const x=8+rng()*(W-16)|0,y=8+rng()*(H-16)|0; if(!buildable(y*W+x))continue;
       let dm=1e9; for(const c of arr) dm=Math.min(dm,Math.hypot(c.x-x,c.y-y));
-      if(dm>bd){bd=dm;best={x,y};} } return best; };
+      if(dm>bd){bd=dm;best={x,y};} } return (best&&bd>=floor)?best:null; };
 
   // route(a,b): a road that may BEND at intermediate nodes to get around problematic terrain
   // (wide water). Straight if it can; else dog-legs through a land bend point, recursively.
   // Returns {pts:[[x,y]...], len, spans} (spans = bridge decks along it) or null if unroutable.
   const routeCache=new Map();
+  const MTN_PEN=4, FRST_PEN=0.8;                                       // length added per mountain / forest tile
   const route=(ax,ay,bx,by,depth)=>{
     const ws=spanPts(ax,ay,bx,by);
-    if(ws) return {pts:[[ax,ay],[bx,by]], len:ws.d, spans:ws.spans};   // straight road works
-    if(depth<=0) return null;
+    const straight = ws ? {pts:[[ax,ay],[bx,by]], len:ws.d+ws.mtn*MTN_PEN+ws.frst*FRST_PEN, spans:ws.spans} : null;
+    if(ws && ws.mtn===0 && ws.frst<=8) return straight;               // clean enough straight road -> done
+    if(depth<=0) return straight;                                      // can't bend more: take straight if any
+    // straight is blocked by wide water (ws null) or runs through mountains -> try a bend that beats it
     const dx=bx-ax,dy=by-ay,L=Math.hypot(dx,dy)||1, mx=(ax+bx)/2,my=(ay+by)/2, px=-dy/L,py=dx/L;
-    let best=null,bd=Infinity; const maxOff=Math.min(L*1.1,240);
-    for(let off=16;off<=maxOff;off+=20)for(const s of[1,-1]){            // try bend points off the midline, both sides
+    let best=null,bd=straight?straight.len:Infinity; const maxOff=Math.min(L*1.1,240);
+    for(let off=16;off<=maxOff;off+=20)for(const s of[1,-1]){           // try bend points off the midline, both sides
       const Px=Math.round(mx+px*off*s), Py=Math.round(my+py*off*s);
       if(!onLand(Px,Py))continue;
       const r1=route(ax,ay,Px,Py,depth-1); if(!r1)continue;
       const r2=route(Px,Py,bx,by,depth-1); if(!r2)continue;
       const tot=r1.len+r2.len+off*0.04; if(tot<bd){bd=tot;best={r1,r2};} // prefer shortest, slight straightness bias
     }
-    if(!best)return null;
-    return {pts:best.r1.pts.concat(best.r2.pts.slice(1)), len:best.r1.len+best.r2.len, spans:best.r1.spans.concat(best.r2.spans)};
+    if(!best) return straight;                                         // no better detour found
+    return {pts:best.r1.pts.concat(best.r2.pts.slice(1)), len:bd, spans:best.r1.spans.concat(best.r2.spans)};
   };
   const routeXY=(ax,ay,bx,by)=>{ const k=ax+','+ay+','+bx+','+by; if(routeCache.has(k))return routeCache.get(k);
     const r=route(ax,ay,bx,by,2); routeCache.set(k,r); return r; };
 
-  const capital=(C,f)=>{ const s=spreadSpot(C); if(s)C.push({x:s.x,y:s.y,f,major:true}); };
   const near=(C,x,y,minD)=>C.some(c=>Math.hypot(c.x-x,c.y-y)<minD);
-  const scatter=(C,count,minD)=>{ for(let k=0;k<count*8&&count>0;k++){            // drop minor towns on open land
-    const x=8+rng()*(W-16)|0,y=8+rng()*(H-16)|0; if(!buildable(y*W+x)||near(C,x,y,minD))continue;
-    C.push({x,y,f:0,major:false}); count--; } };
-
-  // ---- layout scenarios: different ways the realm's towns are arranged ----
-  const SCENARIOS=[
-    { name:'Zjednoczone Królestwo', place:C=>{                                   // many towns -> dense linked realm
-        for(let f=0;f<F;f++)capital(C,f);
-        for(let f=0;f<F;f++)if(rng()<0.5)capital(C,f);
-        scatter(C,12+(rng()*8|0),30); } },
-    { name:'Miasta-Państwa', place:C=>{                                          // tight clusters per faction
-        for(let f=0;f<F;f++){ const s=spreadSpot(C); if(!s)continue; C.push({x:s.x,y:s.y,f,major:true});
-          let sat=1+(rng()*3|0);
-          for(let k=0;k<sat*6;k++){ const a=rng()*6.2832,r=18+rng()*26, x=(s.x+Math.cos(a)*r)|0,y=(s.y+Math.sin(a)*r)|0;
-            if(onLand(x,y)&&!near(C,x,y,14)){C.push({x,y,f,major:false}); if(--sat<=0)break;} } } } },
-    { name:'Pogranicze', place:C=>{                                             // few capitals, long spur chains
-        const caps=Math.max(2,Math.round(F*0.6));
-        for(let f=0;f<caps;f++)capital(C,f%F);
-        scatter(C,5+(rng()*5|0),34); } },
-  ];
+  // resource scan around a point -> biome counts; siteScore rewards a rich, varied hinterland so
+  // towns land where the land pays off (ore in hills/mountains, fish/salt by the coast, etc).
+  const scan=(x,y,RAD=15)=>{ const c={F:0,G:0,M:0,H:0,W:0,D:0,land:0};
+    for(let dy=-RAD;dy<=RAD;dy+=2)for(let dx=-RAD;dx<=RAD;dx+=2){ if(dx*dx+dy*dy>RAD*RAD)continue;
+      const xx=x+dx,yy=y+dy; if(xx<0||yy<0||xx>=W||yy>=H)continue; const b=biome[yy*W+xx];
+      if(b===BIOME.FOREST)c.F++; else if(b===BIOME.GRASS)c.G++; else if(b===BIOME.MOUNTAIN)c.M++;
+      else if(b===BIOME.HILLS)c.H++; else if(b<=BIOME.SHALLOW)c.W++; else if(b===BIOME.DESERT)c.D++;
+      if(b>BIOME.SHALLOW)c.land++; }
+    return c; };
+  const ROLES=[['ruda',c=>Math.min(c.M,6)*3],['port',c=>Math.min(c.W,8)*2.2],['sól',c=>Math.min(c.D,6)*2.3],
+               ['drewno',c=>Math.min(c.F,10)*1.1],['kamień',c=>Math.min(c.H,6)*1.5],['zboże',c=>Math.min(c.G,12)*1.0]];
+  const siteScore=c=>{ if(c.land<10)return 0; let s=0,kinds=0; for(const[,fn]of ROLES){const v=fn(c); s+=v; if(v>3)kinds++;} return s+kinds*6; };
+  const econRole=c=>{ let best='rolnictwo',bv=0; for(const[nm,fn]of ROLES){const v=fn(c); if(v>bv){bv=v;best=nm;}} return best; };
 
   // link every town with an MST over ALL pairs, using BENDABLE roads (route) so a pair blocked by
   // water connects by curving around it. Only genuinely unreachable towns (islands) stay separate.
@@ -330,37 +329,34 @@ function genWorld(seed){
     const E=[]; for(const[d,a,b]of cand){const ra=find(a),rb=find(b); if(ra!==rb){par[ra]=rb;E.push([a,b]);}}
     return E; };
 
-  // resolve each capital's road fork into a "Y": a fork town at the Fermat point (Weiszfeld median)
-  const steinerForks=(C,E)=>{ const majIdx=C.map((c,i)=>c.major?i:-1).filter(i=>i>=0);
-    for(const m of majIdx){
-      const neigh=[]; for(const[a,b]of E){ if(a===m)neigh.push(b); else if(b===m)neigh.push(a); }
-      if(neigh.length<2)continue;
-      const pts=[m,...neigh]; let sx=0,sy=0; for(const p of pts){sx+=C[p].x;sy+=C[p].y;} sx/=pts.length; sy/=pts.length;
-      for(let it=0;it<16;it++){ let wx=0,wy=0,wsum=0; for(const p of pts){ const dx=C[p].x-sx,dy=C[p].y-sy,dd=Math.hypot(dx,dy)||1e-3; wx+=C[p].x/dd;wy+=C[p].y/dd;wsum+=1/dd; } sx=wx/wsum; sy=wy/wsum; }
-      sx|=0; sy|=0; if(!onLand(sx,sy))continue;
-      if(routeXY(C[m].x,C[m].y,sx,sy)==null||neigh.some(ni=>routeXY(C[ni].x,C[ni].y,sx,sy)==null))continue;
-      const S=C.length; C.push({x:sx,y:sy,f:C[m].f,major:false});
-      for(let k=E.length-1;k>=0;k--) if(E[k][0]===m||E[k][1]===m) E.splice(k,1);   // drop capital's arms
-      E.push([m,S]); for(const ni of neigh) E.push([S,ni]);                        // re-root through the fork town
-    } return E; };
-
-  // hang a few lone 1-3 town chains ("dyszel") off the network by a single road each
-  const addSpurs=(C,E)=>{ const spurs=2+(rng()*4|0);
-    for(let s=0;s<spurs;s++){ let fi=rng()*C.length|0, fx=C[fi].x, fy=C[fi].y;
-      const ang=rng()*6.2832, len=1+(rng()*3|0);
-      for(let k=0;k<len;k++){ const dist=26+rng()*30, nx=(fx+Math.cos(ang)*dist)|0, ny=(fy+Math.sin(ang)*dist)|0;
-        if(!onLand(nx,ny)||near(C,nx,ny,22)||routeXY(fx,fy,nx,ny)==null)break;
-        const idx=C.length; C.push({x:nx,y:ny,f:C[fi].f,major:false}); E.push([fi,idx]); fi=idx; fx=nx; fy=ny; } }
-    return E; };
-
   const buildNetwork=()=>{
-    const sc=SCENARIOS[rng()*SCENARIOS.length|0]; const C=[]; sc.place(C);
-    const majs=C.filter(c=>c.major); if(majs.length<1||C.length<2) return null;
-    for(const c of C){ if(c.major)continue; let bf=0,bd=1e18;                     // minor town -> nearest capital's faction
-      for(const m of majs){const dd=(m.x-c.x)**2+(m.y-c.y)**2; if(dd<bd){bd=dd;bf=m.f;}} c.f=bf; }
-    let E=linkTowns(C); E=steinerForks(C,E); E=addSpurs(C,E);
+    // 1) place towns where the land pays off: sample, keep the richest sites, respect spacing
+    const C=[]; const TARGET=12+(rng()*5|0);
+    for(let g=0; C.length<TARGET && g<TARGET*40; g++){ let best=null,bs=0;
+      for(let k=0;k<70;k++){ const x=8+rng()*(W-16)|0,y=8+rng()*(H-16)|0;
+        if(!buildable(y*W+x)||near(C,x,y,MIN_CITY_DIST))continue;
+        const sc=siteScore(scan(x,y)); if(sc>bs){bs=sc;best={x,y,score:sc};} }
+      if(!best)break; C.push(best); }
+    if(C.length<3)return null;
+    // 2) houses: the richest, well-separated towns become seats; every town joins its nearest seat
+    const order=C.map((c,i)=>i).sort((a,b)=>C[b].score-C[a].score), seats=[];
+    for(const i of order){ if(seats.length>=F)break;
+      if(!seats.some(j=>Math.hypot(C[i].x-C[j].x,C[i].y-C[j].y)<MIN_CITY_DIST*2.0)) seats.push(i); }
+    if(!seats.length) seats.push(order[0]);
+    for(let i=0;i<C.length;i++){ let bf=0,bd=1e18;
+      for(let s=0;s<seats.length;s++){const q=C[seats[s]],dd=(q.x-C[i].x)**2+(q.y-C[i].y)**2; if(dd<bd){bd=dd;bf=s;}}
+      C[i].f=bf; C[i].role=econRole(scan(C[i].x,C[i].y)); }
+    for(const s of seats) C[s].seat=true;                                        // faction capital (economic centre)
+    // 3) link with optimal bendable roads; if a link is too long, drop a town in the gap and relink
+    let E=linkTowns(C);
+    for(let pass=0; pass<2; pass++){ const add=[];
+      for(const[a,b]of E){ const r=routeXY(C[a].x,C[a].y,C[b].x,C[b].y); if(r&&r.len>180){
+        const mid=r.pts[r.pts.length>>1];
+        if(onLand(mid[0],mid[1])&&!near(C,mid[0],mid[1],MIN_CITY_DIST*0.8)) add.push({x:mid[0],y:mid[1],f:C[a].f}); } }
+      if(!add.length)break;
+      for(const t of add){ t.role=econRole(scan(t.x,t.y)); C.push(t); } E=linkTowns(C); }
     const paths=E.map(([a,b])=>routeXY(C[a].x,C[a].y,C[b].x,C[b].y));            // bendable polyline per road
-    return {C,E,paths,scenario:sc.name};
+    return {C,E,paths};
   };
   // planar test over the road POLYLINES: no two segments of different roads may cross. Segments that
   // share an endpoint (a town or a fork node) are legal meetings, not crossings.
@@ -376,20 +372,23 @@ function genWorld(seed){
     return {E:keepE,paths:keepP}; };
 
   let chosen=null, fb=null;
-  for(let attempt=0;attempt<60 && !chosen;attempt++){ const r=buildNetwork(); if(!r||r.C.length<3)continue;
+  for(let attempt=0;attempt<40 && !chosen;attempt++){ const r=buildNetwork(); if(!r||r.C.length<3)continue;
     if(planar(r.paths)) chosen=r; else if(!fb) fb=r; }                          // rebuild until crossing-free
-  if(!chosen){ chosen=fb||buildNetwork()||{C:[],E:[],paths:[],scenario:'—'};
+  if(!chosen){ chosen=fb||buildNetwork()||{C:[],E:[],paths:[]};
     const t=dropCross(chosen.E,chosen.paths); chosen={...chosen,E:t.E,paths:t.paths}; }  // last resort: drop crossings
-  const cities=chosen.C, edges=chosen.E, roadPaths=chosen.paths, scenario=chosen.scenario;
+  const cities=chosen.C, edges=chosen.E, roadPaths=chosen.paths;
 
   // ---- per-city detail: name / population / residential / economy / fields ----
+  // pop is driven by the town's economic richness and hard-capped at 1200; the faction's
+  // economic centre (its seat) is the largest. role = its dominant resource.
   for(const c of cities){
     c.name=townName(rng);
-    c.pop = c.major ? Math.round(2400+rng()*2800)                 // capitals are big
-                    : Math.round((0.15+rng()*rng()*1.5)*1000);    // fork + spur towns small
-    const n=Math.max(1,Math.min(12,1+Math.round(c.pop/350)));
+    const wealth=(c.score||siteScore(scan(c.x,c.y)));
+    const base = (c.seat?520:120) + wealth*9;
+    c.pop = Math.min(1200, Math.max(80, Math.round(base*(0.8+rng()*0.4))));
+    const n=Math.max(1,Math.min(12,1+Math.round(c.pop/130)));
     c.houses=buildCluster(c.x,c.y,n,rng,biome);
-    const tier=c.pop>2200?'manor':c.pop>1100?'townhouse':'house';
+    const tier=c.seat?'manor':c.pop>650?'townhouse':'house';
     c.houses.forEach((h,i)=>{ h.btype = i===0?tier : (h.small?'shack':'house');
       h.spr = h.btype==='shack'?SPR.hut : h.btype==='manor'?SPR.manor
             : h.btype==='townhouse'?SPR.townhouse : (((h.x+h.y)&1)?SPR.house:SPR.cottage); });
@@ -400,6 +399,34 @@ function genWorld(seed){
     c.r=all.reduce((m,h)=>Math.max(m,Math.hypot(h.x-c.x,h.y-c.y)),1.5);
     c.minY=all.reduce((m,h)=>Math.min(m,h.y),c.y);
   }
+
+  // ---- houses + chronicle: each faction is a noble House (Dune / GoT flavour) with a seat,
+  //      a motto, a dominant trade, and a web of wars / alliances / rivalries that give the map a past ----
+  const HSYL=['kar','vel','dra','mor','thal','ys','gorn','bel','rha','tyr','wen','ost','cael','dun','var','sel','grim','ah'];
+  const houseName=()=>{ const s=HSYL[rng()*HSYL.length|0]+HSYL[rng()*HSYL.length|0]; return s[0].toUpperCase()+s.slice(1); };
+  const MOTTOS=['Krew i Kamień','Wierni do końca','Z morza nasza siła','Żelazo się nie gnie','Pod jednym niebem',
+    'Cisza przed burzą','Korzeń i Korona','Ogień nie pyta','Sól ziemi','Głębiej niż góry'];
+  const TRAITS=['kupiecki','wojowniczy','pobożny','skryty','dumny','żeglarski','górniczy'];
+  const usedF=[...new Set(cities.map(c=>c.f))].sort((a,b)=>a-b);
+  const houses=usedF.map(f=>{ const own=cities.filter(c=>c.f===f);
+    const seat=own.find(c=>c.seat)||own.slice().sort((a,b)=>b.pop-a.pop)[0];
+    return {f, name:houseName(), faction:FACTIONS[f].name, color:FACTIONS[f].flag,
+      seat:seat?seat.name:'—', role:seat?seat.role:'—', motto:MOTTOS[rng()*MOTTOS.length|0],
+      trait:TRAITS[rng()*TRAITS.length|0], founded:180+(rng()*620|0), towns:own.length}; });
+  const hByF=new Map(houses.map(h=>[h.f,h]));
+  for(const c of cities) c.houseName = (hByF.get(c.f)||{}).name || '—';
+  // pairwise relations
+  const relations=[];
+  for(let i=0;i<houses.length;i++)for(let j=i+1;j<houses.length;j++){ const r=rng();
+    relations.push({a:i,b:j, rel: r<0.22?'wojna': r<0.40?'sojusz': r<0.64?'rywalizacja':'pokój'}); }
+  // a short chronicle, oldest house first
+  const events=[];
+  const byAge=houses.map((h,i)=>({h,i})).sort((p,q)=>p.h.founded-q.h.founded);
+  for(const{h}of byAge.slice(0,2)) events.push(`${h.founded}: Ród ${h.name} obejmuje ${h.seat}.`);
+  for(const rl of relations){ const A=houses[rl.a].name,B=houses[rl.b].name;
+    if(rl.rel==='wojna') events.push(`Wojna: Ród ${A} przeciw Rodowi ${B}.`);
+    else if(rl.rel==='sojusz') events.push(`Sojusz Rodów ${A} i ${B}.`); }
+  if(events.length>9) events.length=9;
 
   // ---- territory: each LAND tile owned by nearest city -> its faction ----
   const fac=new Int8Array(N).fill(-1);
@@ -479,8 +506,8 @@ function genWorld(seed){
     const dest=reach[rng()*reach.length|0],route=planRoute(home,dest);if(!route||!route.length)continue;
     merchants.push({home,dest,f:rng()<0.5?cities[home].f:-1,segs:segmentsFor(route),si:0,t:rng(),speed:0.10+rng()*0.10});}
 
-  const world={seed,scenario,W,H,height,moist,biome,cost,fac,cities,edges,adj,cadj,merchants,trees,bushes,peaks,hills,rocks,fields,bridges,roadPaths,
-    bitmap:bakeTerrain(height,moist,biome,fac)};
+  const world={seed,W,H,height,moist,biome,cost,fac,cities,edges,adj,cadj,merchants,trees,bushes,peaks,hills,rocks,fields,bridges,roadPaths,
+    houses,relations,events,bitmap:bakeTerrain(height,moist,biome,fac)};
   // runtime route replanning (called when a caravan reaches its destination)
   world.replan=m=>{const home=m.dest,reach=reachableFrom(home);
     if(!reach.length){m.si=0;m.t=0;return;}
@@ -570,6 +597,7 @@ function pickCity(sx,sy){ if(!WORLD)return; const[wx,wy]=s2w(sx,sy); let best=nu
 function updateInfo(){
   if(selected==null||!WORLD){info.classList.remove('open');document.body.classList.remove('has-info');return;}
   const c=WORLD.cities[selected],f=FACTIONS[c.f];
+  const house=WORLD.houses.find(h=>h.f===c.f);
   const comp={}; for(const h of c.houses) comp[h.btype]=(comp[h.btype]||0)+1;
   const resRows=['manor','townhouse','house','shack'].filter(k=>comp[k])
     .map(k=>`<div class="li"><span>${RES_NAME[k]}</span><span>${comp[k]}</span></div>`).join('');
@@ -579,9 +607,10 @@ function updateInfo(){
   info.innerHTML=
     `<div class="ihead"><span class="nm">${c.name}</span><span class="x" onclick="clearCity()">✕</span></div>`
    +`<div class="ibody">`
-   + `<div class="fac"><span class="sw" style="background:${f.flag}"></span>${f.name}`
-   +   (c.port?` <span class="port">⚓ port</span>`:'')+`</div>`
+   + `<div class="fac"><span class="sw" style="background:${f.flag}"></span>Ród ${house?house.name:f.name}`
+   +   (c.seat?` <span class="port">★ stolica</span>`:'')+(c.port?` <span class="port">⚓ port</span>`:'')+`</div>`
    + `<div class="stat"><span>populacja</span><b>${c.pop.toLocaleString('pl')}</b></div>`
+   + `<div class="stat"><span>gospodarka</span><b>${c.role||'—'}</b></div>`
    + `<div class="stat"><span>biom</span><b>${BIOME_NAME[WORLD.biomeAt(c.x,c.y)]}</b></div>`
    + `<div class="stat"><span>drogi</span><b>${WORLD.adj[selected].length}</b></div>`
    + `<div class="sect">mieszkalne (${c.houses.length})</div><div class="list">${resRows}</div>`
@@ -689,8 +718,9 @@ function tick(now){const dt=Math.min(0.05,(now-last)/1000);last=now;
 // regen builds a fresh world (used by the generating screen + in-game "new map").
 function regen(seed){WORLD=genWorld(typeof seed==='number'?seed:(Math.random()*1e9|0));clampCam();
   selected=null;updateInfo();
+  if(typeof renderChronicle==='function') renderChronicle();
   const el=document.getElementById('seed');if(el)el.textContent=WORLD.seed;
-  const sc=document.getElementById('scenario');if(sc)sc.textContent=WORLD.scenario;}
+  const sc=document.getElementById('scenario');if(sc)sc.textContent=WORLD.houses.length+' rodów · '+WORLD.cities.length+' miast';}
 // R = new map, but only while playing (start/gen screens own the keyboard otherwise).
 addEventListener('keydown',e=>{if((e.key==='r'||e.key==='R')&&document.body.dataset.screen==='game')regen();});
 buildSprites();
