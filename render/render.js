@@ -32,6 +32,7 @@ function setBuild(id){ buildMode=id; document.body.classList.toggle('building',!
 function exitBuild(){ setBuild(null); }
 addEventListener('keydown',e=>{ if(e.key==='Escape'){exitBuild();clearCity();} });
 
+const HSIZE={manor:4, townhouse:3, house:2.4, shack:1.8};   // dwelling pick/frame radius (tiles) by size
 // a caravan's current world position (one source of truth; clamped so a finished seg can't read undefined)
 function caravanPos(m){ const s=m.segs[Math.min(m.si,m.segs.length-1)]; return [s.x0+(s.x1-s.x0)*m.t, s.y0+(s.y1-s.y0)*m.t, s]; }
 function pickAt(sx,sy){ if(!WORLD)return; const[wx,wy]=s2w(sx,sy);
@@ -43,7 +44,7 @@ function pickAt(sx,sy){ if(!WORLD)return; const[wx,wy]=s2w(sx,sy);
   selMerchant=null;
   // what's under the cursor: nearest building, dwelling, town
   let bb=null,bd=3.5,bci=-1; WORLD.cities.forEach((c,ci)=>{ for(const b of c.builds){ const d=Math.hypot(b.x-wx,b.y-wy); if(d<bd){bd=d;bb=b;bci=ci;} } });
-  let hh=null,hd=3,hci=-1;  WORLD.cities.forEach((c,ci)=>{ for(const h of c.houses){ const d=Math.hypot(h.x-wx,h.y-wy); if(d<hd){hd=d;hh=h;hci=ci;} } });
+  let hh=null,hd=1e9,hci=-1; WORLD.cities.forEach((c,ci)=>{ for(const h of c.houses){ const d=Math.hypot(h.x-wx,h.y-wy); if(d<(HSIZE[h.btype]||2.4)&&d<hd){hd=d;hh=h;hci=ci;} } });
   let nc=null,cd=1e9;       WORLD.cities.forEach((c,i)=>{ const d=Math.hypot(c.x-wx,c.y-wy); if(d<c.r+3&&d<cd){cd=d;nc=i;} });
   const ci = bb?bci : hh?hci : nc;
   if(ci==null){ clearCity(); return; }                                         // clicked empty land
@@ -351,7 +352,8 @@ function render(){
     ctx.strokeStyle='#ffe066';ctx.lineWidth=lw;ctx.lineJoin='miter';ctx.setLineDash([]);
     ctx.strokeRect(Math.round(sx)-r, Math.round(sy)-r, r*2, r*2);}   // chunky square bracket, no rounding
   const framed = selBuild?selBuild.b : (selHouse&&selHouse.ci===selected?selHouse.h:null);
-  if(framed){ const[bx,by]=w2s(framed.x,framed.y),r=Math.max(6,2.2*cam.zoom),lw=Math.max(2,Math.round(cam.zoom*0.9));
+  if(framed){ const sz=framed.btype?(HSIZE[framed.btype]||2.4):2.2;          // houses scale by size
+    const[bx,by]=w2s(framed.x,framed.y),r=Math.max(6,sz*cam.zoom),lw=Math.max(2,Math.round(cam.zoom*0.9));
     ctx.strokeStyle='#ffe066';ctx.lineWidth=lw;ctx.lineJoin='miter';ctx.setLineDash([]);
     ctx.strokeRect(Math.round(bx-r), Math.round(by-r*1.7), Math.round(r*2), Math.round(r*2)); }   // tight bracket on picked building/house
   if(selMerchant&&selMerchant.segs.length){ const[mx,my]=caravanPos(selMerchant), [px,py]=w2s(mx,my),
