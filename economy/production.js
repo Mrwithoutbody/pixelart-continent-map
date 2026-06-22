@@ -13,6 +13,7 @@ const ECON={
   popFloor:25,
   ruinLimit:200,         // ticks of sustained famine before a building is abandoned (long + recoverable)
   cargoCap:24, tradeVal:6, foodReserve:10,  // caravan: load size, gold/price scale, ticks of food kept home
+  buildEvery:40, buildReserve:50,           // autonomous town growth: try a build every N ticks if treasury > reserve
 };
 
 // recipe per building: out:[res,rate] always; in:[res,rate] for refiners that consume a raw input.
@@ -22,12 +23,15 @@ const PROD={
   mine:{out:['ruda',1]},           smelter:{in:['ruda',2],out:['metal',1]},
   quarry:{out:['kamień',1]},       fishery:{out:['ryby',2]},
   salt_works:{out:['sól',6]},      harbor:{out:['towary',1]},
+  hunter:{out:['mięso',2]},        // forest food source (gives forest towns a food base)
   market:{out:['złoto',2]},        warehouse:{}, chapel:{}, tower:{},
-  // bakery: salted recipes (3:1 grain, 1:2 fish) are efficient; unsalted gruel is a lean fallback.
+  // bakery: salted recipes (grain/fish/meat + salt) are efficient; unsalted gruel is a lean fallback.
   piekarnia:{recipes:[ {in:[['zboże',3],['sól',1]], out:['jedzenie',3]},
                        {in:[['ryby',1],['sól',2]],  out:['jedzenie',3]},
+                       {in:[['mięso',2],['sól',1]], out:['jedzenie',3]},
                        {in:[['zboże',4]],           out:['jedzenie',1], gruel:true},
-                       {in:[['ryby',2]],            out:['jedzenie',1], gruel:true} ]},
+                       {in:[['ryby',2]],            out:['jedzenie',1], gruel:true},
+                       {in:[['mięso',3]],           out:['jedzenie',1], gruel:true} ]},
 };
 // normalise any building to a list of recipes [{in:[[res,q],...], out:[res,q]}]
 function recipesOf(id){ const p=PROD[id]; if(!p)return[];
@@ -39,11 +43,12 @@ const BUILD_COST={
   farm:{drewno:6},                 lumber_camp:{drewno:3},
   mine:{drewno:8,'kamień':5},        quarry:{drewno:6},
   fishery:{drewno:8},              salt_works:{drewno:6,'kamień':4},
+  hunter:{drewno:6},
   piekarnia:{drewno:10,'kamień':6},  sawmill:{drewno:12},
   smelter:{drewno:8,'kamień':14},    market:{drewno:10,'kamień':10,'złoto':10},
   warehouse:{drewno:8},            tower:{drewno:12,'kamień':24},
 };
-const BUILDABLE=['farm','piekarnia','lumber_camp','mine','quarry','fishery','salt_works','sawmill','smelter','market','warehouse','tower']
+const BUILDABLE=['farm','piekarnia','hunter','lumber_camp','mine','quarry','fishery','salt_works','sawmill','smelter','market','warehouse','tower']
   .map(id=>({id, name:(BLD[id]||{name:id}).name, cost:BUILD_COST[id]||{}}));
 
 const ECON_TICK=1.0;   // seconds of game time per economy tick
@@ -55,7 +60,7 @@ const costStr=id=>{ const c=BUILD_COST[id]||{},k=Object.keys(c); return k.length
 // ---- PER-BUILDING WAREHOUSES: every building (and dwelling) stores its OWN goods up to its own cap.
 // The town's stockpile is the sum of these. 'złoto' is the town treasury (c.gold), not a warehoused good.
 const STORE={ warehouse:160, market:60, harbor:60,                      // dedicated / civic stores
-  farm:25, lumber_camp:25, mine:25, quarry:25, fishery:25, salt_works:25,   // raw extractors: own buffer
+  farm:25, lumber_camp:25, mine:25, quarry:25, fishery:25, salt_works:25, hunter:25,   // raw extractors: own buffer
   mill:30, sawmill:30, smelter:30, piekarnia:30,                            // refiners: slightly bigger
   tower:10, chapel:10,                                                      // civic: token
   manor:30, townhouse:12, house:6, shack:3 };                              // dwellings: household pantry
@@ -116,12 +121,49 @@ function ruinOne(c){ const live=(c.builds||[]).filter(b=>!b.ruined); if(!live.le
   const s=t.stock||{}; t.ruined=true; invalidateStores();
   for(const r in s){ if(s[r]>0) townGive(c,r,s[r]); }  t.stock={}; }              // redistribute, don't vaporise
 
+// ---- autonomous town growth: a town invests its treasury into the building it most needs ----
+const has=(c,id)=>c.builds.some(b=>b.id===id&&!b.ruined);
+const cntB=(c,id)=>c.builds.reduce((n,b)=>n+(b.id===id&&!b.ruined?1:0),0);
+// what should this town build next? (need-driven, biome-aware) — returns an id, '__house', or null
+function chooseBuild(c){ const k=c.kinds||{};
+  // 1) FOOD: short on food -> SCALE the food chain the land supports (duplicates allowed, capped)
+  if(cityFood(c) < cityNeed(c)){
+    const inputAround = k.G>14||k.W>4||k.F>14;
+    if(inputAround && cntB(c,'piekarnia')<1)              return 'piekarnia';   // a bakery at all, first
+    if(k.G>14 && cntB(c,'farm')<3)                        return 'farm';
+    if(k.W>4  && cntB(c,'fishery')<3)                     return 'fishery';
+    if(k.F>14 && cntB(c,'hunter')<3)                      return 'hunter';
+    if(k.D>14 && cntB(c,'salt_works')<2)                 return 'salt_works';
+    if(inputAround && cntB(c,'piekarnia')<2 && cityFood(c)<cityNeed(c)*0.7) return 'piekarnia';  // 2nd bakery if still short
+  }
+  // 2) HOUSING: prosperous (fed) town near its housing ceiling -> room for more people
+  if((c.starv||0)===0 && (c.pop||0) >= housingCap(c)*0.85) return '__house';
+  // 3) VALUE-ADD: a raw piling up with no refiner the land can support
+  if(k.F>14 && townHas(c,'drewno')>40 && !has(c,'sawmill')) return 'sawmill';
+  if(k.M>14 && townHas(c,'ruda')>20  && !has(c,'smelter'))  return 'smelter';
+  return null;
+}
+// find an empty, passable, non-overlapping tile in the ring around a town
+function freeSpotNear(world,c){ for(let t=0;t<40;t++){ const a=Math.random()*6.2832, rad=5+Math.random()*10;
+  const x=Math.round(c.x+Math.cos(a)*rad), y=Math.round(c.y+Math.sin(a)*rad*0.8);
+  if(!world.passableAt(x,y))continue;
+  if(c.builds.concat(c.houses).some(o=>Math.abs(o.x-x)<4&&Math.abs(o.y-y)<4))continue;
+  return {x,y}; } return null; }
+function tryBuild(world,c){ if((c.gold||0) < ECON.buildReserve) return;
+  const id=chooseBuild(c); if(!id)return;
+  if(id==='__house'){ if((c.gold||0)<ECON.buildReserve+20)return; const s=freeSpotNear(world,c); if(!s)return;
+    c.houses.push({x:s.x,y:s.y,btype:'house',spr:SPR.house,stock:{},owner:{k:'rod',id:c.f}}); c.gold-=20; invalidateStores(); return; }
+  if(!canAfford(c,id))return; const s=freeSpotNear(world,c); if(!s)return;
+  payCost(c,id); const b=makeBuild(id,s.x,s.y); b.owner={k:'rod',id:c.f};
+  c.r=Math.max(c.r,Math.hypot(s.x-c.x,s.y-c.y)+1); c.builds.push(b); invalidateStores(); }
+
 // production: each working building runs the first recipe the TOWN can supply; output lands in that
 // building first (so its own price reflects what it makes), spilling into town storage when full.
 function tickEconomy(world,dt){
   if(!world)return false;
   world._acc=(world._acc||0)+dt; if(world._acc<ECON_TICK)return false; world._acc-=ECON_TICK;
-  for(const c of world.cities){
+  world._tickN=(world._tickN||0)+1;
+  for(let ci=0;ci<world.cities.length;ci++){ const c=world.cities[ci];
     const cap=cityCap(c); let used=cityUsed(c);
     for(const b of c.builds){ if(b.ruined)continue;
       for(const rec of recipesOf(b.id)){
@@ -136,7 +178,9 @@ function tickEconomy(world,dt){
     if(feedCity(c)){ c.starv=Math.max(0,(c.starv||0)-2);
       const hc=housingCap(c); if(c.pop<hc) c.pop=Math.min(hc, (c.pop||0)*(1+ECON.popGrow)+0.2); }
     else { c.starv=(c.starv||0)+1; c.pop=Math.max(ECON.popFloor,(c.pop||0)*(1-ECON.popShrink));
-      if(c.starv>=ECON.ruinLimit){ ruinOne(c); c.starv=Math.floor(ECON.ruinLimit*0.6); } } }
+      if(c.starv>=ECON.ruinLimit){ ruinOne(c); c.starv=Math.floor(ECON.ruinLimit*0.6); } }
+    // autonomous growth: each town periodically invests in the building it needs (staggered)
+    if((world._tickN+ci)%ECON.buildEvery===0) tryBuild(world,c); }
   return true;
 }
 // per-tick gross output of a town (resource -> rate), for the info panel (working buildings only).

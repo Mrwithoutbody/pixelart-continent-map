@@ -18,8 +18,8 @@ function buildCluster(cx,cy,n,rng,biome){
   return houses;
 }
 // which economy buildings a town gets, from biomes within reach
-function cityEconomy(c,biome){
-  const RAD=16,cnt={F:0,G:0,M:0,H:0,W:0,D:0};
+// biome tally of a town's hinterland (also stored on the town so autonomous growth knows what's buildable)
+function kindsAround(c,biome){ const RAD=16,cnt={F:0,G:0,M:0,H:0,W:0,D:0};
   for(let dy=-RAD;dy<=RAD;dy++)for(let dx=-RAD;dx<=RAD;dx++){
     if(dx*dx+dy*dy>RAD*RAD)continue;
     const x=c.x+dx,y=c.y+dy; if(x<0||y<0||x>=W||y>=H)continue;
@@ -27,10 +27,15 @@ function cityEconomy(c,biome){
     if(b===BIOME.FOREST)cnt.F++; else if(b===BIOME.GRASS)cnt.G++;
     else if(b===BIOME.MOUNTAIN)cnt.M++; else if(b===BIOME.HILLS)cnt.H++;
     else if(b<=BIOME.SHALLOW)cnt.W++; else if(b===BIOME.DESERT)cnt.D++; }
+  return cnt; }
+function cityEconomy(c,biome){
+  const cnt=c.kinds||(c.kinds=kindsAround(c,biome));
   const out=[],TH=14;
-  if(cnt.G>TH)out.push('farm','piekarnia');           // grain town bakes (grain+salt)
-  else if(cnt.W>4)out.push('fishery','piekarnia');    // else a coastal town bakes (fish+salt)
-  if(cnt.G>TH&&cnt.W>4)out.push('fishery');           // grain town that also has a coast still fishes
+  // food first so the slice never starves a town of its bakery/producers
+  if(cnt.G>TH)out.push('farm');
+  if(cnt.W>4)out.push('fishery');
+  if(cnt.F>TH)out.push('hunter');                     // forest food: meat
+  if(cnt.G>TH||cnt.W>4||cnt.F>TH)out.push('piekarnia');  // any food input -> a bakery
   if(cnt.F>TH)out.push('lumber_camp','sawmill');
   if(cnt.M>TH)out.push('mine','smelter');
   if(cnt.H>TH)out.push('quarry');
