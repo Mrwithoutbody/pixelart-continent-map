@@ -354,7 +354,7 @@ function genWorld(seed){
     for(const r in tally){ if(m.strat.goods&&!m.strat.goods.includes(r))continue;
       const reserve=(r===FOOD)?cityNeed(c)*ECON.foodReserve:0, avail=tally[r]-reserve; if(avail>bv){bv=avail;best=r;} }
     if(!best)return null; const price=valueAt(ci,best); if(price<=0)return null;
-    const qty=Math.min(ECON.cargoCap, Math.floor(bv*0.5), Math.floor(m.gold*0.8/price));
+    const qty=Math.min(ECON.cargoCap, Math.floor(bv*0.8), Math.floor(m.gold*0.85/price));
     if(qty<=0)return null; const cost=qty*price; townTake(c,best,qty); c.gold=(c.gold||0)+cost; m.gold-=cost;  // caravan pays the seller town
     return {res:best,qty,cost}; };
   // caravan sells at town ci; the town pays what it can afford & store, the caravan banks the revenue
@@ -364,16 +364,19 @@ function genWorld(seed){
     if(qty>0){ const rev=qty*price; townGive(c,cargo.res,qty); c.gold=gold-rev; m.gold+=rev;
       m.profit=(m.profit||0)+rev-cargo.cost*(qty/cargo.qty); }
     m.cargo=null; };                                                      // unsold remainder is written off (a loss)
-  const destFor=(reach,cargo,rand)=>{ if(!cargo) return reach[(rand()*reach.length)|0];   // empty -> wander to find goods
-    let best=reach[0],bs=-1e9;
+  // pick the best market, but prefer NEAR towns: score = sale value minus a distance toll. A nearby
+  // scarce town beats a far one, so short routes win and empty neighbours get served.
+  const destFor=(home,reach,cargo,rand)=>{ if(!cargo) return reach[(rand()*reach.length)|0];   // empty -> wander
+    const hc=cities[home]; let best=reach[0],bs=-1e9;
     for(const d of reach){ if(cityCap(cities[d])-cityUsed(cities[d])<=0)continue;
-      const score=valueAt(d,cargo.res)+rand()*1.5; if(score>bs){bs=score;best=d;} }              // sell where it pays most
+      const dist=Math.hypot(cities[d].x-hc.x,cities[d].y-hc.y);
+      const score=valueAt(d,cargo.res)-dist*0.02+rand()*1.5; if(score>bs){bs=score;best=d;} }
     return best; };
   let MID=0;
   const newMerchant=(home,gold,rand)=>{ const reach=reachableFrom(home); if(!reach.length)return null;
     const m={id:MID++,home,dest:home,f:cities[home].f,gold,profit:0,cargo:null,
-      strat:STRATS[(rand()*STRATS.length)|0],segs:[],si:0,t:0,speed:0.10+rand()*0.10};
-    m.cargo=buyAt(home,m); const dest=destFor(reach,m.cargo,rand),route=planRoute(home,dest);
+      strat:STRATS[(rand()*STRATS.length)|0],segs:[],si:0,t:0,speed:0.30+rand()*0.20};   // ~3x faster -> trips actually complete
+    m.cargo=buyAt(home,m); const dest=destFor(home,reach,m.cargo,rand),route=planRoute(home,dest);
     if(!route||!route.length)return null; m.dest=dest; m.segs=segmentsFor(route); return m; };
   const merchants=[];
   const FLEET=Math.min(90,Math.max(18,Math.round(cities.length*2.2)));   // scale caravans with the world
@@ -391,7 +394,7 @@ function genWorld(seed){
     if(m.gold < ECON.caravanMinGold){ m.dead=true; return; }              // bankrupt -> removed by reap()
     const home=m.dest, reach=reachableFrom(home); if(!reach.length){ m.dead=true; return; }
     m.home=home; m.cargo=buyAt(home,m);
-    const dest=destFor(reach,m.cargo,Math.random), route=planRoute(home,dest);
+    const dest=destFor(home,reach,m.cargo,Math.random), route=planRoute(home,dest);
     if(!route){ m.si=0;m.t=0; return; }
     m.dest=dest; m.segs=segmentsFor(route); m.si=0; m.t=0; };
   // a prosperous town funds a fresh caravan out of its treasury (this is what creates new caravans)

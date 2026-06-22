@@ -13,7 +13,7 @@ const ECON={
   popFloor:25,
   ruinLimit:200,         // ticks of sustained famine before a building is abandoned (long + recoverable)
   cargoCap:100, tradeVal:6, foodReserve:10,  // caravan: load size (Colonization 100-unit), gold/price scale, food kept home
-  caravanCapital:55, caravanMinGold:8, caravanUpkeep:12,   // starting purse; running cost per trip; below min -> bankrupt
+  caravanCapital:120, caravanMinGold:8, caravanUpkeep:12,   // starting purse; running cost per trip; below min -> bankrupt
   buildEvery:40, buildReserve:50,           // autonomous town growth: try a build every N ticks if treasury > reserve
   caravanEvery:60, caravanGold:140, fleetPerTown:3,   // a rich market town spawns a caravan; fleet capped at fleetPerTown*towns
 };
