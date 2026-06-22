@@ -124,27 +124,4 @@ const BUILDING_SPRITES={
     ".KgyrpgK.",
     ".K.K.K.K.",
   ]},
-  // ---- wayside (road junctions) ----
-  signpost:{pal:{K:OUTL,P:'#8a5e34',S:'#d8b97a'},rows:[   // Drogowskaz: signboard on a post
-    "..KKKKK.",
-    ".KPPPPPK",
-    ".KPSSSPK",
-    ".KPPPPPK",
-    "..KKKKK.",
-    "...KP...",
-    "...KP...",
-    "...KP...",
-    "..KKKKK.",
-  ]},
-  inn:{pal:{K:OUTL,R:'#6e4326',W:'#c08646',T:'#9a6a38',O:'#9bb6c6',D:OUTL,S:'#d8b97a'},rows:[ // Zajazd
-    "..KKKKKKK..",
-    ".KRRRRRRRK.",
-    "KKKKKKKKKKK",
-    ".KWTWWWTWK.",
-    ".KWOWWWOWKS",   // hanging sign on the right
-    ".KWWWWWWWKS",
-    ".KWWDDDWWK.",
-    ".KWWDDDWWK.",
-    ".KKKKKKKKK.",
-  ]},
 };

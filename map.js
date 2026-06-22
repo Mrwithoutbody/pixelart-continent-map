@@ -31,7 +31,6 @@ function segCross(a,b,c,d){const s=(p,q,r)=>(q.x-p.x)*(r.y-p.y)-(q.y-p.y)*(r.x-p
   return ((d1>0)!==(d2>0))&&((d3>0)!==(d4>0));}
 
 // ---------- tunables ----------
-const CITY_COUNT=28, CITY_MIN_DIST=42;       // target town count + min tiles between towns
 const MAX_BRIDGE=7;                          // widest water span (tiles) a road bridge may cross
 
 // ---------- biomes + terrain coefficients ----------
@@ -244,38 +243,103 @@ function genWorld(seed){
   const isLand=i=>biome[i]>=BIOME.BEACH;
   const isWater=i=>biome[i]<=BIOME.SHALLOW;
 
-  // ---- cities on buildable land (grass/beach/desert), min spacing ----
-  const cities=[], fields=[]; let tries=0;   // fields = all crop patches across farming towns
+  // ---- city + road network: capitals -> Steiner-Y links -> a town at each fork -> spurs ----
+  // Real roads: 3 towns in a triangle meet at a central Y (the Fermat/Steiner point), not as a
+  // ring or a star. Build capitals first, link them, drop a small town where the roads fork, then
+  // hang a few lone "drawbar" towns off the network. Roads MUST stay planar (crossings have no
+  // junction and bridges must not overlap), so the whole graph is rebuilt until it is crossing-free.
+  const fields=[];
   const buildable=i=>{const b=biome[i];return b===BIOME.GRASS||b===BIOME.BEACH||b===BIOME.DESERT;};
-  while(cities.length<CITY_COUNT && tries<20000){tries++;
-    const x=8+rng()*(W-16)|0, y=8+rng()*(H-16)|0, i=y*W+x;
-    if(!buildable(i)) continue;
-    if(cities.every(c=>Math.hypot(c.x-x,c.y-y)>CITY_MIN_DIST)) cities.push({x,y});
-  }
-  // ---- assign factions: F capitals spread out, others join nearest capital ----
-  const F=Math.min(FACTIONS.length,cities.length);
-  const caps=[];
-  caps.push(0);
-  while(caps.length<F){ // farthest-point sampling
-    let bi=-1,bd=-1;
-    for(let i=0;i<cities.length;i++){ if(caps.includes(i))continue;
-      let dm=1e9; for(const c of caps) dm=Math.min(dm,Math.hypot(cities[i].x-cities[c].x,cities[i].y-cities[c].y));
-      if(dm>bd){bd=dm;bi=i;} }
-    caps.push(bi);
-  }
-  for(const c of cities){ let bf=0,bd=1e9;
-    caps.forEach((ci,fi)=>{const dd=Math.hypot(c.x-cities[ci].x,c.y-cities[ci].y); if(dd<bd){bd=dd;bf=fi;}});
-    c.f=bf; c.name=townName(rng);
-    c.pop=Math.round((0.2+rng()*rng()*3)*1000);                 // skewed: most towns small
-    const n=Math.max(1,Math.min(12,1+Math.round(c.pop/350)));   // houses scale w/ population
+  const onLand=(x,y)=>{x|=0;y|=0;return x>=1&&y>=1&&x<W-1&&y<H-1&&buildable(y*W+x);};
+  // spanPts: straight-line water test. null if a water run is too wide to bridge, else {d,bridgeTiles,spans}.
+  const spanPts=(ax,ay,bx,by)=>{const d=Math.hypot(bx-ax,by-ay),n=Math.max(1,Math.round(d));
+    const spans=[]; let run=0,runStart=0,bridgeTiles=0;
+    const at=t=>({x:ax+(bx-ax)*t,y:ay+(by-ay)*t});
+    const closeRun=endI=>{ if(run*d/n>MAX_BRIDGE) return false;
+      const p0=at(Math.max(0,runStart-1)/n), p1=at(Math.min(n,endI)/n);
+      spans.push({x0:p0.x,y0:p0.y,x1:p1.x,y1:p1.y}); bridgeTiles+=run; run=0; return true; };
+    for(let i=0;i<=n;i++){const p=at(i/n),x=p.x|0,y=p.y|0;
+      if(x<0||y<0||x>=W||y>=H){ if(run>0&&!closeRun(i))return null; continue; }
+      if(biome[y*W+x]<=BIOME.SHALLOW){ if(run===0)runStart=i; run++; }
+      else if(run>0 && !closeRun(i)) return null; }
+    if(run>0 && !closeRun(n)) return null;
+    return {d,bridgeTiles,spans};
+  };
+  const F=Math.min(FACTIONS.length,8);
+  // farthest-point pick: a buildable spot maximally far from the towns placed so far
+  const spreadSpot=arr=>{ let best=null,bd=-1;
+    for(let k=0;k<500;k++){ const x=8+rng()*(W-16)|0,y=8+rng()*(H-16)|0; if(!buildable(y*W+x))continue;
+      let dm=1e9; for(const c of arr) dm=Math.min(dm,Math.hypot(c.x-x,c.y-y));
+      if(dm>bd){bd=dm;best={x,y};} } return best; };
+
+  const buildNetwork=()=>{
+    const C=[];                                                  // {x,y,f,major}
+    for(let f=0;f<F;f++){ const s=spreadSpot(C); if(s)C.push({x:s.x,y:s.y,f,major:true}); }       // 1 capital / faction
+    for(let f=0;f<F;f++){ if(rng()<0.45){ const s=spreadSpot(C); if(s)C.push({x:s.x,y:s.y,f,major:true}); } } // ~half get a 2nd
+    const nMaj=C.length; if(nMaj<2) return null;
+    // 2) MST over capitals (bridge-aware cost)
+    const cand=[];
+    for(let a=0;a<nMaj;a++)for(let b=a+1;b<nMaj;b++){ const ws=spanPts(C[a].x,C[a].y,C[b].x,C[b].y); if(!ws)continue;
+      cand.push([ws.d+ws.bridgeTiles*6,a,b]); }
+    cand.sort((p,q)=>p[0]-q[0]);
+    const par=C.map((_,i)=>i), find=i=>{while(par[i]!==i){par[i]=par[par[i]];i=par[i];}return i;};
+    let E=[]; for(const[d,a,b]of cand){const ra=find(a),rb=find(b); if(ra!==rb){par[ra]=rb;E.push([a,b]);}}
+    // 3) Steiner forks: a capital with >=2 roads gets a fork TOWN at the Fermat point (Weiszfeld),
+    //    turning its outgoing "V" into a "Y" with a small town sitting at the centre.
+    for(let m=0;m<nMaj;m++){
+      const neigh=[]; for(const[a,b]of E){ if(a===m)neigh.push(b); else if(b===m)neigh.push(a); }
+      if(neigh.length<2)continue;
+      const pts=[m,...neigh];
+      let sx=0,sy=0; for(const p of pts){sx+=C[p].x;sy+=C[p].y;} sx/=pts.length; sy/=pts.length;
+      for(let it=0;it<16;it++){ let wx=0,wy=0,wsum=0; for(const p of pts){ const dx=C[p].x-sx,dy=C[p].y-sy,dd=Math.hypot(dx,dy)||1e-3; wx+=C[p].x/dd;wy+=C[p].y/dd;wsum+=1/dd; } sx=wx/wsum; sy=wy/wsum; }
+      sx|=0; sy|=0; if(!onLand(sx,sy))continue;
+      if(spanPts(C[m].x,C[m].y,sx,sy)==null)continue;                       // every arm must be a valid road
+      if(neigh.some(ni=>spanPts(C[ni].x,C[ni].y,sx,sy)==null))continue;
+      const S=C.length; C.push({x:sx,y:sy,f:C[m].f,major:false});
+      E=E.filter(([a,b])=>!(a===m||b===m));                                 // drop the capital's arms
+      E.push([m,S]); for(const ni of neigh) E.push([S,ni]);                 // re-root through the fork town
+    }
+    // 4) spurs ("dyszel"): 1-3 lone towns chained off the network by a single road
+    const spurs=2+(rng()*4|0);
+    for(let s=0;s<spurs;s++){
+      let fi=rng()*C.length|0, fx=C[fi].x, fy=C[fi].y;
+      const ang=rng()*6.2832, len=1+(rng()*3|0);
+      for(let k=0;k<len;k++){
+        const dist=26+rng()*30, nx=(fx+Math.cos(ang)*dist)|0, ny=(fy+Math.sin(ang)*dist)|0;
+        if(!onLand(nx,ny))break;
+        if(C.some(c=>Math.hypot(c.x-nx,c.y-ny)<22))break;
+        if(spanPts(fx,fy,nx,ny)==null)break;
+        const idx=C.length; C.push({x:nx,y:ny,f:C[fi].f,major:false});
+        E.push([fi,idx]); fi=idx; fx=nx; fy=ny;
+      }
+    }
+    return {C,E};
+  };
+  // planar test: reject any layout where two road segments cross (excluding shared endpoints)
+  const planar=(C,E)=>{ for(let i=0;i<E.length;i++)for(let j=i+1;j<E.length;j++){
+    const[a,b]=E[i],[c,d]=E[j]; if(a===c||a===d||b===c||b===d)continue;
+    if(segCross(C[a],C[b],C[c],C[d])) return false; } return true; };
+
+  let cities=null, edges=null;
+  for(let attempt=0;attempt<60 && !cities;attempt++){ const r=buildNetwork();
+    if(r&&r.C.length>=3&&planar(r.C,r.E)){ cities=r.C; edges=r.E; } }      // rebuild until crossing-free
+  if(!cities){ const r=buildNetwork()||{C:[],E:[]}; cities=r.C;            // last resort: keep, drop crossings
+    edges=r.E.filter((e,i)=>r.E.slice(0,i).every(o=>{const[a,b]=e,[c,d]=o;
+      return a===c||a===d||b===c||b===d || !segCross(cities[a],cities[b],cities[c],cities[d]);})); }
+
+  // ---- per-city detail: name / population / residential / economy / fields ----
+  for(const c of cities){
+    c.name=townName(rng);
+    c.pop = c.major ? Math.round(2400+rng()*2800)                 // capitals are big
+                    : Math.round((0.15+rng()*rng()*1.5)*1000);    // fork + spur towns small
+    const n=Math.max(1,Math.min(12,1+Math.round(c.pop/350)));
     c.houses=buildCluster(c.x,c.y,n,rng,biome);
-    // residential composition: centre = best tier the population affords, rest = dom/chata
     const tier=c.pop>2200?'manor':c.pop>1100?'townhouse':'house';
     c.houses.forEach((h,i)=>{ h.btype = i===0?tier : (h.small?'shack':'house');
       h.spr = h.btype==='shack'?SPR.hut : h.btype==='manor'?SPR.manor
             : h.btype==='townhouse'?SPR.townhouse : (((h.x+h.y)&1)?SPR.house:SPR.cottage); });
-    c.builds=placeEconomy(c,biome,rng);                        // economy buildings on the outskirts
-    c.fields = c.builds.some(b=>b.id==='farm') ? placeFields(c,biome,rng) : [];   // farm -> crop fields nearby
+    c.builds=placeEconomy(c,biome,rng);
+    c.fields = c.builds.some(b=>b.id==='farm') ? placeFields(c,biome,rng) : [];
     for(const f of c.fields) fields.push(f);
     const all=c.houses.concat(c.builds);
     c.r=all.reduce((m,h)=>Math.max(m,Math.hypot(h.x-c.x,h.y-c.y)),1.5);
@@ -291,74 +355,9 @@ function genWorld(seed){
     fac[i]=bf;
   }
 
-  // ---- roads: Euclidean MST over land, allowed to bridge narrow water ----
-  // spanPts(ax,ay,bx,by): sample the straight line; if every contiguous water run is short
-  // enough to bridge (<= MAX_BRIDGE), return its length + bridge spans, else null (uncrossable).
-  const nC=cities.length;
-  const spanPts=(ax,ay,bx,by)=>{const d=Math.hypot(bx-ax,by-ay),n=Math.max(1,Math.round(d));
-    const spans=[]; let run=0,runStart=0,bridgeTiles=0;
-    const at=t=>({x:ax+(bx-ax)*t,y:ay+(by-ay)*t});
-    const closeRun=endI=>{ if(run*d/n>MAX_BRIDGE) return false;
-      const p0=at(Math.max(0,runStart-1)/n), p1=at(Math.min(n,endI)/n);
-      spans.push({x0:p0.x,y0:p0.y,x1:p1.x,y1:p1.y}); bridgeTiles+=run; run=0; return true; };
-    for(let i=0;i<=n;i++){const p=at(i/n),x=p.x|0,y=p.y|0;
-      if(x<0||y<0||x>=W||y>=H){ if(run>0&&!closeRun(i))return null; continue; }
-      if(biome[y*W+x]<=BIOME.SHALLOW){ if(run===0)runStart=i; run++; }
-      else if(run>0 && !closeRun(i)) return null; }
-    if(run>0 && !closeRun(n)) return null;
-    return {d,bridgeTiles,spans};
-  };
-  const cand=[];
-  for(let a=0;a<nC;a++)for(let b=a+1;b<nC;b++){ const ws=spanPts(cities[a].x,cities[a].y,cities[b].x,cities[b].y); if(!ws)continue;
-    cand.push([ws.d+ws.bridgeTiles*6, a, b]); }              // bridges add cost -> roads prefer dry land
-  cand.sort((p,q)=>p[0]-q[0]);
-  const par=cities.map((_,i)=>i), find=i=>{while(par[i]!==i){par[i]=par[par[i]];i=par[i];}return i;};
-  const edges=[];
-  const crosses=(a,b)=>edges.some(([p,q])=> p!==a&&p!==b&&q!==a&&q!==b && segCross(cities[a],cities[b],cities[p],cities[q]));
-  // Kruskal over cost-sorted cand. allowCross=false => planar tree (no crossings);
-  // allowCross=true 2nd pass connects any leftovers (shortest-first => minimal crossing).
-  const grow=allowCross=>{for(const[d,a,b]of cand){const ra=find(a),rb=find(b);
-    if(ra!==rb && (allowCross||!crosses(a,b))){par[ra]=rb;edges.push([a,b]);}}};
-  grow(false); grow(true);
+  // ---- road adjacency + bridge decks (every road node is a town; roads are straight links) ----
   const adj=cities.map(()=>[]); for(const[a,b]of edges){adj[a].push(b);adj[b].push(a);}
-
-  // ---- junctions: roads leaving a town in a similar direction merge into a trunk that
-  //      forks (a "Y") at a wayside node carrying a building (signpost / inn / watchtower).
-  //      Nodes 0..nC-1 are the cities; junctions are appended. The result stays a tree.
-  const NPOS=cities.map(c=>[c.x,c.y]);           // road-graph node positions
-  const Elist=edges.map(([a,b])=>[a,b]);         // mutable node-pair edges (start = city MST)
-  const junctions=[];
-  const isLandPt=(x,y)=>{x|=0;y|=0;return x>=0&&y>=0&&x<W&&y<H&&biome[y*W+x]>BIOME.SHALLOW;};
-  const JTYPE=[['signpost','Drogowskaz'],['inn','Zajazd'],['tower','Strażnica']];
-  for(let c=0;c<nC;c++){
-    const inc=[]; for(const e of Elist){ if(e[0]===c||e[1]===c){ const o=e[0]===c?e[1]:e[0];
-      inc.push({e,ang:Math.atan2(NPOS[o][1]-cities[c].y,NPOS[o][0]-cities[c].x),
-                dist:Math.hypot(NPOS[o][0]-cities[c].x,NPOS[o][1]-cities[c].y)}); } }
-    if(inc.length<2)continue;
-    inc.sort((p,q)=>p.ang-q.ang);
-    for(let i=0;i<inc.length;){ let j=i+1; while(j<inc.length && (inc[j].ang-inc[j-1].ang)<0.8) j++;
-      const group=inc.slice(i,j); i=j;
-      if(group.length<2)continue;                                       // need >=2 near-parallel roads
-      let mx=0,my=0; for(const g of group){mx+=Math.cos(g.ang);my+=Math.sin(g.ang);}
-      const ml=Math.hypot(mx,my)||1; mx/=ml; my/=ml;
-      const jd=Math.max(5,Math.min(18,Math.min(...group.map(g=>g.dist))*0.35));
-      const jx=cities[c].x+mx*jd, jy=cities[c].y+my*jd;
-      if(!isLandPt(jx,jy))continue;                                     // never strand a junction in water
-      const J=NPOS.length; NPOS.push([jx,jy]); Elist.push([c,J]);       // trunk: city -> junction
-      for(const g of group){ if(g.e[0]===c)g.e[0]=J; else g.e[1]=J; }   // branches now start at J
-      const[id,nm]=JTYPE[rng()<0.5?0:rng()<0.6?1:2];
-      junctions.push({x:jx,y:jy,spr:SPR[id],name:nm});
-    }
-  }
-  const redges=Elist;
-  const radj=NPOS.map(()=>[]); for(const[a,b]of Elist){radj[a].push(b);radj[b].push(a);}
-  // bridge decks = water spans of the actual road segments (city/junction node edges)
-  const bridges=[]; for(const[a,b]of Elist){const ws=spanPts(NPOS[a][0],NPOS[a][1],NPOS[b][0],NPOS[b][1]); if(ws)for(const sp of ws.spans)bridges.push(sp);}
-  // land path (node positions) between two city nodes, threaded through junctions (tree => unique)
-  const landPath=(u,v)=>{const prev=new Map([[u,-1]]),qq=[u];
-    while(qq.length){const n=qq.shift(); if(n===v)break; for(const w of radj[n]) if(!prev.has(w)){prev.set(w,n);qq.push(w);}}
-    if(!prev.has(v))return [NPOS[u],NPOS[v]];
-    const path=[];let cur=v;while(cur!==-1){path.unshift(NPOS[cur]);cur=prev.get(cur);}return path;};
+  const bridges=[]; for(const[a,b]of edges){const ws=spanPts(cities[a].x,cities[a].y,cities[b].x,cities[b].y); if(ws)for(const sp of ws.spans)bridges.push(sp);}
 
   // ---- decoration entities (consistent w/ biome) ----
   const trees=[], bushes=[], peaks=[], hills=[], rocks=[];
@@ -409,8 +408,7 @@ function genWorld(seed){
     if(!prev.has(t))return null;const seq=[];let cur=t;
     while(prev.get(cur)){const p=prev.get(cur);seq.unshift({from:p.from,to:cur,mode:p.mode});cur=p.from;}return seq;};
   const segmentsFor=route=>{const segs=[];for(const e of route){const A=cities[e.from],B=cities[e.to];
-    if(e.mode==='land'){ const P=landPath(e.from,e.to);                       // follow the road through junctions
-      for(let i=0;i+1<P.length;i++) segs.push({x0:P[i][0],y0:P[i][1],x1:P[i+1][0],y1:P[i+1][1],mode:'land'}); }
+    if(e.mode==='land'){ segs.push({x0:A.x,y0:A.y,x1:B.x,y1:B.y,mode:'land'}); }   // straight road A->B
     else{ segs.push({x0:A.x,y0:A.y,x1:A.dock.x,y1:A.dock.y,mode:'sea'});       // walk to dock, then sail, then to town
           segs.push({x0:A.dock.x,y0:A.dock.y,x1:B.dock.x,y1:B.dock.y,mode:'sea'});
           segs.push({x0:B.dock.x,y0:B.dock.y,x1:B.x,y1:B.y,mode:'sea'}); }}
@@ -423,7 +421,7 @@ function genWorld(seed){
     merchants.push({home,dest,f:rng()<0.5?cities[home].f:-1,segs:segmentsFor(route),si:0,t:rng(),speed:0.10+rng()*0.10});}
 
   const world={seed,W,H,height,moist,biome,cost,fac,cities,edges,adj,cadj,merchants,trees,bushes,peaks,hills,rocks,fields,bridges,
-    roadNodes:NPOS,redges,junctions,bitmap:bakeTerrain(height,moist,biome,fac)};
+    bitmap:bakeTerrain(height,moist,biome,fac)};
   // runtime route replanning (called when a caravan reaches its destination)
   world.replan=m=>{const home=m.dest,reach=reachableFrom(home);
     if(!reach.length){m.si=0;m.t=0;return;}
@@ -549,8 +547,8 @@ function blit(fr,wx,wy,shadow=true){const[sx,sy]=w2s(wx,wy),z=cam.zoom;
 function viewBounds(){const[x0,y0]=s2w(0,0),[x1,y1]=s2w(cv.width,cv.height);return{x0:x0-2,y0:y0-2,x1:x1+2,y1:y1+18};}
 function drawRoads(){ctx.strokeStyle=PAL.road;ctx.lineWidth=Math.max(2,Math.round(cam.zoom*1.1));
   ctx.lineCap='butt';ctx.lineJoin='miter';ctx.setLineDash([Math.round(cam.zoom*2),Math.round(cam.zoom*1.4)]);ctx.beginPath();
-  for(const[a,b]of WORLD.redges){const[px,py]=w2s(WORLD.roadNodes[a][0],WORLD.roadNodes[a][1]),
-    [qx,qy]=w2s(WORLD.roadNodes[b][0],WORLD.roadNodes[b][1]); ctx.moveTo(px,py);ctx.lineTo(qx,qy);}   // node -> node (forks at junctions)
+  for(const[a,b]of WORLD.edges){const[px,py]=w2s(WORLD.cities[a].x,WORLD.cities[a].y),
+    [qx,qy]=w2s(WORLD.cities[b].x,WORLD.cities[b].y); ctx.moveTo(px,py);ctx.lineTo(qx,qy);}   // straight town -> town
   ctx.stroke();ctx.setLineDash([]);}
 // wooden bridge decks over the water spans of the road network (drawn under the road dashes)
 function drawBridges(){const z=cam.zoom; ctx.lineCap='butt';ctx.lineJoin='miter';ctx.setLineDash([]);
@@ -594,7 +592,6 @@ function render(){
     for(const h of c.houses) if(h.x>=vb.x0&&h.x<=vb.x1&&h.y>=vb.y0&&h.y<=vb.y1) ents.push(h);
     for(const b of c.builds) if(b.x>=vb.x0&&b.x<=vb.x1&&b.y>=vb.y0&&b.y<=vb.y1) ents.push(b);
   }
-  for(const j of WORLD.junctions) if(j.x>=vb.x0&&j.x<=vb.x1&&j.y>=vb.y0&&j.y<=vb.y1) ents.push(j);  // wayside buildings
   ents.sort((a,b)=>a.y-b.y);
   for(const e of ents) blit(e.spr,e.x,e.y);
   for(const m of WORLD.merchants){ if(!m.segs.length)continue;

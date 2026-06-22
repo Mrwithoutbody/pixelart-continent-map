@@ -20,13 +20,13 @@ function bake(d){ return pxSprite(d.rows,d.pal,d.oyBottom!==false); }
 
 // built sprite atlas — same shape map.js expects.
 const SPR={house:null,cottage:null,townhouse:null,manor:null,hut:null,workshop:null,
-  chapel:null,tower:null,windmill:null,market:null,signpost:null,inn:null,
+  chapel:null,tower:null,windmill:null,market:null,
   trees:[],bushes:[],hills:[],rocks:[],mountains:[],fields:[],cart:null,ship:null};
 
 // assemble atlas from the three system registries (loaded after this file).
 function buildSprites(){
   // --- buildings (single sprites) ---
-  for(const k of ['house','cottage','townhouse','manor','hut','workshop','chapel','tower','windmill','market','signpost','inn'])
+  for(const k of ['house','cottage','townhouse','manor','hut','workshop','chapel','tower','windmill','market'])
     SPR[k]=bake(BUILDING_SPRITES[k]);
   // --- terrain (mix of const grids + procedural generators) ---
   SPR.trees    =[bake(VEG_SPRITES.tree), pineSprite(), bake(VEG_SPRITES.smallTree)];
