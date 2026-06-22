@@ -12,7 +12,7 @@ const ECON={
   cargoCap:100,              // caravan load size (Colonization 100-unit)
   caravanCapital:120, caravanMinGold:8, caravanUpkeep:5,    // starting purse; running cost per trip; below min -> bankrupt
   caravansPerTown:1,         // caravans a town outfits from its treasury at world start (~1/town)
-  buildEvery:40, buildReserve:50,           // autonomous town growth: try a build every N ticks if treasury > reserve
+  buildEvery:100, buildReserve:50,          // autonomous town growth: try a build every N ticks if treasury > reserve
   caravanEvery:40, caravanGold:110, fleetPerTown:3,   // a rich market town spawns a caravan; fleet capped at fleetPerTown*towns
 };
 
@@ -148,7 +148,7 @@ function chooseBuild(c){ const k=c.kinds||{};
     if(inputAround && cntB(c,'piekarnia')<2 && cityFood(c)<cityNeed(c)*0.7) return 'piekarnia';  // 2nd bakery if still short
   }
   // 2) HOUSING: prosperous (fed) town near its housing ceiling -> room for more people
-  if((c.starv||0)===0 && (c.pop||0) >= housingCap(c)*0.85) return '__house';
+  if((c.starv||0)===0 && (c.pop||0) >= housingCap(c)) return '__house';   // only when genuinely full, not at 85%
   // 3) VALUE-ADD: a raw piling up with no refiner the land can support
   if(k.F>14 && townHas(c,'drewno')>40 && !has(c,'sawmill')) return 'sawmill';
   if(k.F>14 && townHas(c,'futra')>20  && !has(c,'garbarnia')) return 'garbarnia';
