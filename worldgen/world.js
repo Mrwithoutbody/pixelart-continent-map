@@ -329,11 +329,30 @@ function genWorld(seed){
           segs.push({x0:B.dock.x,y0:B.dock.y,x1:B.x,y1:B.y,mode:'sea'}); }}
     for(const s of segs)s.len=Math.hypot(s.x1-s.x0,s.y1-s.y0)||1;return segs;};
 
-  // ---- merchants: caravans with a destination, multi-modal route ----
+  // ---- merchants: caravans that HAUL goods between towns to organize production ----
+  // Load the home's biggest surplus, then route to the town that most NEEDS it (consumes it as a
+  // refiner input / is low on it / has free storage). Ore reaches smelters, timber/stone reach
+  // builders, food reaches markets. cityCap/cityUsed/PROD are runtime globals (loaded after this).
+  const CARGO_CAP=12;
+  const loadCargo=ci=>{ const st=cities[ci].stock||{}; let best=null,bv=4;       // need >4 to bother hauling
+    for(const r in st){ if(st[r]>bv){bv=st[r];best=r;} }
+    if(!best)return null; const qty=Math.min(CARGO_CAP,Math.floor(st[best]*0.5)); // take half the surplus
+    if(qty<=0)return null; st[best]-=qty; return {res:best,qty}; };
+  const unloadCargo=(ci,cargo)=>{ if(!cargo)return; const c=cities[ci],st=c.stock||(c.stock={});
+    const free=Math.max(0,cityCap(c)-cityUsed(c)), drop=Math.min(cargo.qty,free);  // no room -> rest spoils on the dock
+    if(drop>0)st[cargo.res]=(st[cargo.res]||0)+drop; };
+  const consumes=(ci,res)=>cities[ci].builds.some(b=>{const p=PROD[b.id];return p&&p.in&&p.in[0]===res;});
+  const destFor=(reach,cargo,rand)=>{ if(!cargo) return reach[(rand()*reach.length)|0];   // empty caravan -> wander
+    let best=reach[0],bs=-1e9;
+    for(const d of reach){ const free=Math.max(0,cityCap(cities[d])-cityUsed(cities[d]));
+      const have=(cities[d].stock||{})[cargo.res]||0;
+      const score=(consumes(d,cargo.res)?1000:0)+free*2-have+rand()*4;   // prefer a consumer with room & little stock
+      if(score>bs){bs=score;best=d;} }
+    return best; };
   const merchants=[];
   for(let m=0;m<18;m++){const home=rng()*cities.length|0,reach=reachableFrom(home);if(!reach.length)continue;
-    const dest=reach[rng()*reach.length|0],route=planRoute(home,dest);if(!route||!route.length)continue;
-    merchants.push({home,dest,f:rng()<0.5?cities[home].f:-1,segs:segmentsFor(route),si:0,t:rng(),speed:0.10+rng()*0.10});}
+    const cargo=loadCargo(home),dest=destFor(reach,cargo,rng),route=planRoute(home,dest);if(!route||!route.length)continue;
+    merchants.push({home,dest,f:rng()<0.5?cities[home].f:-1,cargo,segs:segmentsFor(route),si:0,t:rng(),speed:0.10+rng()*0.10});}
 
   const layers={ rody:bakeLayer(biome,fac,FACTIONS.map(f=>f.tint),FACTIONS.map(f=>f.border)),
     gildie:bakeLayer(biome,facG,guilds.map(g=>hexRGB(g.color)),guilds.map(g=>g.color)),
@@ -342,11 +361,12 @@ function genWorld(seed){
     houses,relations,ties,legends,intrigues,events,guilds,guildRel,faiths,faithTension,
     base:bakeBase(height,moist,biome),layers,layer:'rody'};
   // runtime route replanning (called when a caravan reaches its destination)
-  world.replan=m=>{const home=m.dest,reach=reachableFrom(home);
-    if(!reach.length){m.si=0;m.t=0;return;}
-    const dest=reach[(Math.random()*reach.length)|0],route=planRoute(home,dest);
-    if(!route){m.si=0;m.t=0;return;}
-    m.home=home;m.dest=dest;m.segs=segmentsFor(route);m.si=0;m.t=0;};
+  world.replan=m=>{ unloadCargo(m.dest,m.cargo);                          // arrived -> drop the haul
+    const home=m.dest,reach=reachableFrom(home);
+    if(!reach.length){m.cargo=null;m.si=0;m.t=0;return;}
+    const cargo=loadCargo(home),dest=destFor(reach,cargo,Math.random),route=planRoute(home,dest);   // load, then route to need
+    if(!route){m.cargo=null;m.si=0;m.t=0;return;}
+    m.home=home;m.dest=dest;m.cargo=cargo;m.segs=segmentsFor(route);m.si=0;m.t=0;};
   // ---- terrain-model API for future units ----
   world.idx=(x,y)=>((y|0)*W+(x|0));
   world.inBounds=(x,y)=>x>=0&&y>=0&&x<W&&y<H;
