@@ -272,6 +272,29 @@ function genWorld(seed){
       let dm=1e9; for(const c of arr) dm=Math.min(dm,Math.hypot(c.x-x,c.y-y));
       if(dm>bd){bd=dm;best={x,y};} } return best; };
 
+  // route(a,b): a road that may BEND at intermediate nodes to get around problematic terrain
+  // (wide water). Straight if it can; else dog-legs through a land bend point, recursively.
+  // Returns {pts:[[x,y]...], len, spans} (spans = bridge decks along it) or null if unroutable.
+  const routeCache=new Map();
+  const route=(ax,ay,bx,by,depth)=>{
+    const ws=spanPts(ax,ay,bx,by);
+    if(ws) return {pts:[[ax,ay],[bx,by]], len:ws.d, spans:ws.spans};   // straight road works
+    if(depth<=0) return null;
+    const dx=bx-ax,dy=by-ay,L=Math.hypot(dx,dy)||1, mx=(ax+bx)/2,my=(ay+by)/2, px=-dy/L,py=dx/L;
+    let best=null,bd=Infinity; const maxOff=Math.min(L*1.1,240);
+    for(let off=16;off<=maxOff;off+=20)for(const s of[1,-1]){            // try bend points off the midline, both sides
+      const Px=Math.round(mx+px*off*s), Py=Math.round(my+py*off*s);
+      if(!onLand(Px,Py))continue;
+      const r1=route(ax,ay,Px,Py,depth-1); if(!r1)continue;
+      const r2=route(Px,Py,bx,by,depth-1); if(!r2)continue;
+      const tot=r1.len+r2.len+off*0.04; if(tot<bd){bd=tot;best={r1,r2};} // prefer shortest, slight straightness bias
+    }
+    if(!best)return null;
+    return {pts:best.r1.pts.concat(best.r2.pts.slice(1)), len:best.r1.len+best.r2.len, spans:best.r1.spans.concat(best.r2.spans)};
+  };
+  const routeXY=(ax,ay,bx,by)=>{ const k=ax+','+ay+','+bx+','+by; if(routeCache.has(k))return routeCache.get(k);
+    const r=route(ax,ay,bx,by,2); routeCache.set(k,r); return r; };
+
   const capital=(C,f)=>{ const s=spreadSpot(C); if(s)C.push({x:s.x,y:s.y,f,major:true}); };
   const near=(C,x,y,minD)=>C.some(c=>Math.hypot(c.x-x,c.y-y)<minD);
   const scatter=(C,count,minD)=>{ for(let k=0;k<count*8&&count>0;k++){            // drop minor towns on open land
@@ -295,11 +318,13 @@ function genWorld(seed){
         scatter(C,5+(rng()*5|0),34); } },
   ];
 
-  // link every town with a bridge-aware MST over ALL pairs -> one connected network across the
-  // continent (towns left unreachable by short bridges are true islands handled by sea trade).
+  // link every town with an MST over ALL pairs, using BENDABLE roads (route) so a pair blocked by
+  // water connects by curving around it. Only genuinely unreachable towns (islands) stay separate.
   const linkTowns=C=>{ const n=C.length, cand=[];
-    for(let a=0;a<n;a++)for(let b=a+1;b<n;b++){ const ws=spanPts(C[a].x,C[a].y,C[b].x,C[b].y); if(!ws)continue;
-      cand.push([ws.d+ws.bridgeTiles*6,a,b]); }
+    for(let a=0;a<n;a++)for(let b=a+1;b<n;b++){
+      if(Math.hypot(C[a].x-C[b].x,C[a].y-C[b].y)>360)continue;          // skip far pairs (kept cheap)
+      const r=routeXY(C[a].x,C[a].y,C[b].x,C[b].y); if(!r)continue;
+      cand.push([r.len,a,b]); }
     cand.sort((p,q)=>p[0]-q[0]);
     const par=C.map((_,i)=>i),find=i=>{while(par[i]!==i){par[i]=par[par[i]];i=par[i];}return i;};
     const E=[]; for(const[d,a,b]of cand){const ra=find(a),rb=find(b); if(ra!==rb){par[ra]=rb;E.push([a,b]);}}
@@ -313,7 +338,7 @@ function genWorld(seed){
       const pts=[m,...neigh]; let sx=0,sy=0; for(const p of pts){sx+=C[p].x;sy+=C[p].y;} sx/=pts.length; sy/=pts.length;
       for(let it=0;it<16;it++){ let wx=0,wy=0,wsum=0; for(const p of pts){ const dx=C[p].x-sx,dy=C[p].y-sy,dd=Math.hypot(dx,dy)||1e-3; wx+=C[p].x/dd;wy+=C[p].y/dd;wsum+=1/dd; } sx=wx/wsum; sy=wy/wsum; }
       sx|=0; sy|=0; if(!onLand(sx,sy))continue;
-      if(spanPts(C[m].x,C[m].y,sx,sy)==null||neigh.some(ni=>spanPts(C[ni].x,C[ni].y,sx,sy)==null))continue;
+      if(routeXY(C[m].x,C[m].y,sx,sy)==null||neigh.some(ni=>routeXY(C[ni].x,C[ni].y,sx,sy)==null))continue;
       const S=C.length; C.push({x:sx,y:sy,f:C[m].f,major:false});
       for(let k=E.length-1;k>=0;k--) if(E[k][0]===m||E[k][1]===m) E.splice(k,1);   // drop capital's arms
       E.push([m,S]); for(const ni of neigh) E.push([S,ni]);                        // re-root through the fork town
@@ -324,7 +349,7 @@ function genWorld(seed){
     for(let s=0;s<spurs;s++){ let fi=rng()*C.length|0, fx=C[fi].x, fy=C[fi].y;
       const ang=rng()*6.2832, len=1+(rng()*3|0);
       for(let k=0;k<len;k++){ const dist=26+rng()*30, nx=(fx+Math.cos(ang)*dist)|0, ny=(fy+Math.sin(ang)*dist)|0;
-        if(!onLand(nx,ny)||near(C,nx,ny,22)||spanPts(fx,fy,nx,ny)==null)break;
+        if(!onLand(nx,ny)||near(C,nx,ny,22)||routeXY(fx,fy,nx,ny)==null)break;
         const idx=C.length; C.push({x:nx,y:ny,f:C[fi].f,major:false}); E.push([fi,idx]); fi=idx; fx=nx; fy=ny; } }
     return E; };
 
@@ -334,19 +359,28 @@ function genWorld(seed){
     for(const c of C){ if(c.major)continue; let bf=0,bd=1e18;                     // minor town -> nearest capital's faction
       for(const m of majs){const dd=(m.x-c.x)**2+(m.y-c.y)**2; if(dd<bd){bd=dd;bf=m.f;}} c.f=bf; }
     let E=linkTowns(C); E=steinerForks(C,E); E=addSpurs(C,E);
-    return {C,E,scenario:sc.name};
+    const paths=E.map(([a,b])=>routeXY(C[a].x,C[a].y,C[b].x,C[b].y));            // bendable polyline per road
+    return {C,E,paths,scenario:sc.name};
   };
-  // planar test: reject any layout where two road segments cross (excluding shared endpoints)
-  const planar=(C,E)=>{ for(let i=0;i<E.length;i++)for(let j=i+1;j<E.length;j++){
-    const[a,b]=E[i],[c,d]=E[j]; if(a===c||a===d||b===c||b===d)continue;
-    if(segCross(C[a],C[b],C[c],C[d])) return false; } return true; };
+  // planar test over the road POLYLINES: no two segments of different roads may cross. Segments that
+  // share an endpoint (a town or a fork node) are legal meetings, not crossings.
+  const samePt=(p,q)=>p[0]===q[0]&&p[1]===q[1];
+  const segsCross=(p,list)=>{ for(let i=0;i+1<p.pts.length;i++){const a=p.pts[i],b=p.pts[i+1];
+    for(const q of list)for(let j=0;j+1<q.pts.length;j++){const c=q.pts[j],d=q.pts[j+1];
+      if(samePt(a,c)||samePt(a,d)||samePt(b,c)||samePt(b,d))continue;
+      if(segCross({x:a[0],y:a[1]},{x:b[0],y:b[1]},{x:c[0],y:c[1]},{x:d[0],y:d[1]}))return true; } }
+    return false; };
+  const planar=paths=>{ for(let i=1;i<paths.length;i++) if(segsCross(paths[i],paths.slice(0,i)))return false; return true; };
+  const dropCross=(E,paths)=>{ const keepE=[],keepP=[];                          // greedily keep a crossing-free subset
+    for(let i=0;i<paths.length;i++) if(!segsCross(paths[i],keepP)){keepE.push(E[i]);keepP.push(paths[i]);}
+    return {E:keepE,paths:keepP}; };
 
-  let cities=null, edges=null, scenario='';
-  for(let attempt=0;attempt<60 && !cities;attempt++){ const r=buildNetwork();
-    if(r&&r.C.length>=3&&planar(r.C,r.E)){ cities=r.C; edges=r.E; scenario=r.scenario; } }   // rebuild until crossing-free
-  if(!cities){ const r=buildNetwork()||{C:[],E:[],scenario:'—'}; cities=r.C; scenario=r.scenario;  // last resort: drop crossings
-    edges=r.E.filter((e,i)=>r.E.slice(0,i).every(o=>{const[a,b]=e,[c,d]=o;
-      return a===c||a===d||b===c||b===d || !segCross(cities[a],cities[b],cities[c],cities[d]);})); }
+  let chosen=null, fb=null;
+  for(let attempt=0;attempt<60 && !chosen;attempt++){ const r=buildNetwork(); if(!r||r.C.length<3)continue;
+    if(planar(r.paths)) chosen=r; else if(!fb) fb=r; }                          // rebuild until crossing-free
+  if(!chosen){ chosen=fb||buildNetwork()||{C:[],E:[],paths:[],scenario:'—'};
+    const t=dropCross(chosen.E,chosen.paths); chosen={...chosen,E:t.E,paths:t.paths}; }  // last resort: drop crossings
+  const cities=chosen.C, edges=chosen.E, roadPaths=chosen.paths, scenario=chosen.scenario;
 
   // ---- per-city detail: name / population / residential / economy / fields ----
   for(const c of cities){
@@ -376,9 +410,11 @@ function genWorld(seed){
     fac[i]=bf;
   }
 
-  // ---- road adjacency + bridge decks (every road node is a town; roads are straight links) ----
+  // ---- road adjacency + bridge decks + per-edge polyline lookup (roads may bend at nodes) ----
   const adj=cities.map(()=>[]); for(const[a,b]of edges){adj[a].push(b);adj[b].push(a);}
-  const bridges=[]; for(const[a,b]of edges){const ws=spanPts(cities[a].x,cities[a].y,cities[b].x,cities[b].y); if(ws)for(const sp of ws.spans)bridges.push(sp);}
+  const bridges=[]; for(const p of roadPaths) for(const sp of p.spans) bridges.push(sp);
+  const pathOf=new Map();                                     // city-pair -> bent polyline (for caravans)
+  edges.forEach(([a,b],i)=>pathOf.set(Math.min(a,b)+','+Math.max(a,b), roadPaths[i].pts));
 
   // ---- decoration entities (consistent w/ biome) ----
   const trees=[], bushes=[], peaks=[], hills=[], rocks=[];
@@ -429,7 +465,9 @@ function genWorld(seed){
     if(!prev.has(t))return null;const seq=[];let cur=t;
     while(prev.get(cur)){const p=prev.get(cur);seq.unshift({from:p.from,to:cur,mode:p.mode});cur=p.from;}return seq;};
   const segmentsFor=route=>{const segs=[];for(const e of route){const A=cities[e.from],B=cities[e.to];
-    if(e.mode==='land'){ segs.push({x0:A.x,y0:A.y,x1:B.x,y1:B.y,mode:'land'}); }   // straight road A->B
+    if(e.mode==='land'){ const P=pathOf.get(Math.min(e.from,e.to)+','+Math.max(e.from,e.to))||[[A.x,A.y],[B.x,B.y]];
+      const seq = (P[0][0]===A.x&&P[0][1]===A.y) ? P : P.slice().reverse();      // orient polyline from A to B
+      for(let i=0;i+1<seq.length;i++) segs.push({x0:seq[i][0],y0:seq[i][1],x1:seq[i+1][0],y1:seq[i+1][1],mode:'land'}); }
     else{ segs.push({x0:A.x,y0:A.y,x1:A.dock.x,y1:A.dock.y,mode:'sea'});       // walk to dock, then sail, then to town
           segs.push({x0:A.dock.x,y0:A.dock.y,x1:B.dock.x,y1:B.dock.y,mode:'sea'});
           segs.push({x0:B.dock.x,y0:B.dock.y,x1:B.x,y1:B.y,mode:'sea'}); }}
@@ -441,7 +479,7 @@ function genWorld(seed){
     const dest=reach[rng()*reach.length|0],route=planRoute(home,dest);if(!route||!route.length)continue;
     merchants.push({home,dest,f:rng()<0.5?cities[home].f:-1,segs:segmentsFor(route),si:0,t:rng(),speed:0.10+rng()*0.10});}
 
-  const world={seed,scenario,W,H,height,moist,biome,cost,fac,cities,edges,adj,cadj,merchants,trees,bushes,peaks,hills,rocks,fields,bridges,
+  const world={seed,scenario,W,H,height,moist,biome,cost,fac,cities,edges,adj,cadj,merchants,trees,bushes,peaks,hills,rocks,fields,bridges,roadPaths,
     bitmap:bakeTerrain(height,moist,biome,fac)};
   // runtime route replanning (called when a caravan reaches its destination)
   world.replan=m=>{const home=m.dest,reach=reachableFrom(home);
@@ -568,9 +606,13 @@ function blit(fr,wx,wy,shadow=true){const[sx,sy]=w2s(wx,wy),z=cam.zoom;
 function viewBounds(){const[x0,y0]=s2w(0,0),[x1,y1]=s2w(cv.width,cv.height);return{x0:x0-2,y0:y0-2,x1:x1+2,y1:y1+18};}
 function drawRoads(){ctx.strokeStyle=PAL.road;ctx.lineWidth=Math.max(2,Math.round(cam.zoom*1.1));
   ctx.lineCap='butt';ctx.lineJoin='miter';ctx.setLineDash([Math.round(cam.zoom*2),Math.round(cam.zoom*1.4)]);ctx.beginPath();
-  for(const[a,b]of WORLD.edges){const[px,py]=w2s(WORLD.cities[a].x,WORLD.cities[a].y),
-    [qx,qy]=w2s(WORLD.cities[b].x,WORLD.cities[b].y); ctx.moveTo(px,py);ctx.lineTo(qx,qy);}   // straight town -> town
-  ctx.stroke();ctx.setLineDash([]);}
+  for(const p of WORLD.roadPaths){ const pt=p.pts; let[px,py]=w2s(pt[0][0],pt[0][1]); ctx.moveTo(px,py);
+    for(let i=1;i<pt.length;i++){const[qx,qy]=w2s(pt[i][0],pt[i][1]); ctx.lineTo(qx,qy);} }   // bent polyline road
+  ctx.stroke();ctx.setLineDash([]);
+  // plain junction dots where a road bends (interior nodes)
+  if(cam.zoom>=2){ ctx.setLineDash([]); ctx.fillStyle=PAL.road;
+    for(const p of WORLD.roadPaths) for(let i=1;i+1<p.pts.length;i++){ const[bx,by]=w2s(p.pts[i][0],p.pts[i][1]);
+      const s=Math.max(2,cam.zoom*1.3); ctx.fillRect(Math.round(bx-s/2),Math.round(by-s/2),Math.ceil(s),Math.ceil(s)); } }}
 // wooden bridge decks over the water spans of the road network (drawn under the road dashes)
 function drawBridges(){const z=cam.zoom; ctx.lineCap='butt';ctx.lineJoin='miter';ctx.setLineDash([]);
   for(const br of WORLD.bridges){const[x0,y0]=w2s(br.x0,br.y0),[x1,y1]=w2s(br.x1,br.y1);
