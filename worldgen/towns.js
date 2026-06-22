@@ -36,7 +36,7 @@ function cityEconomy(c,biome){
   if(cnt.W>4)out.push('fishery');
   if(cnt.F>TH)out.push('hunter');                     // forest food: meat
   if(cnt.G>TH||cnt.W>4||cnt.F>TH)out.push('piekarnia');  // any food input -> a bakery
-  if(cnt.F>TH)out.push('lumber_camp','sawmill');
+  if(cnt.F>TH)out.push('lumber_camp','sawmill','garbarnia');
   if(cnt.M>TH)out.push('mine','smelter');
   if(cnt.H>TH)out.push('quarry');
   if(cnt.D>TH)out.push('salt_works');

@@ -27,6 +27,10 @@ const ICON_DEF={
     '........','.OOOOOO.','OtTttTtO','OtTttTtO','OttTTttO','OtTttTtO','.OOOOOO.','........']},
   'złoto':{pal:{O:OUTL,g:'#e0b93a',G:'#f2e08a'},rows:[
     '........','..OOOO..','.OgGggO.','OggGgggO','OgggGgGO','.OgggGO.','..OOOO..','........']},
+  'futra':{pal:{O:OUTL,f:'#8a5a36',F:'#a9743f'},rows:[
+    '........','.OOOOO..','OfFfFfO.','OffFffO.','OfFffFO.','OffFffO.','.OOOOO..','........']},
+  'skóry':{pal:{O:OUTL,s:'#b98a52',S:'#d8b078'},rows:[
+    '........','..OOOO..','.OsSSsO.','OsSSSSsO','OsSSSSsO','.OsSSsO.','...OO...','........']},
 };
 
 const ICON_URL={}, ICON_SPR={};   // res -> dataURL (DOM) / sprite (map)

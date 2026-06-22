@@ -37,7 +37,7 @@ const FACTIONS=[
 const BLD={
   farm:{name:'Farma'}, lumber_camp:{name:'Obóz drwali'}, mine:{name:'Kopalnia'},
   quarry:{name:'Kamieniołom'}, fishery:{name:'Przystań'}, salt_works:{name:'Warzelnia'},
-  hunter:{name:'Gajówka'},
+  hunter:{name:'Gajówka'}, garbarnia:{name:'Garbarnia'},
   mill:{name:'Młyn'}, piekarnia:{name:'Piekarnia'}, sawmill:{name:'Tartak'}, smelter:{name:'Huta'},
   warehouse:{name:'Magazyn'}, market:{name:'Targ'}, harbor:{name:'Port'},
   chapel:{name:'Kaplica'}, tower:{name:'Wieża'},

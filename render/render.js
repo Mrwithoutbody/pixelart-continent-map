@@ -198,7 +198,8 @@ const unitUsedOf=u=>{ let s=0; if(u.stock)for(const r in u.stock)if(u.stock[r]>0
 // recipe(s) of a building as "inputs → output/turę", plus THIS building's own warehouse contents
 function recipeRows(b,c){ const recs=recipesOf(b.id); let h='';
   if(recs.length) h+=recs.map(r=>{ const lhs=r.in.length?r.in.map(x=>`${x[1]} ${x[0]}`).join(' + '):'produkuje';
-    return `<div class="stat"><span>${lhs}</span><b>→ ${r.out[1]} ${r.out[0]}/turę</b></div>`; }).join('');
+    const rhs=`${r.out[1]} ${r.out[0]}`+(r.out2?` + ${r.out2[1]} ${r.out2[0]}`:'');
+    return `<div class="stat"><span>${lhs}</span><b>→ ${rhs}/turę</b></div>`; }).join('');
   const keys=Object.keys(b.stock||{}).filter(r=>b.stock[r]>0);
   h+=`<div class="sect">skład budynku</div>`+(keys.length
     ? keys.map(r=>`<div class="li"><span>${resIcon(r)}${r}</span><span>${Math.floor(b.stock[r])}</span></div>`).join('')
@@ -206,7 +207,7 @@ function recipeRows(b,c){ const recs=recipesOf(b.id); let h='';
   return h; }
 // this building's own bid/ask prices (pure exchange) — color-coded, no raw math thrust at the player
 function priceChips(c,b){ const recs=recipesOf(b.id); const buys=new Set(),sells=new Set();
-  recs.forEach(r=>{ r.in.forEach(x=>buys.add(x[0])); if(r.out)sells.add(r.out[0]); });
+  recs.forEach(r=>{ r.in.forEach(x=>buys.add(x[0])); if(r.out)sells.add(r.out[0]); if(r.out2)sells.add(r.out2[0]); });
   if(!buys.size&&!sells.size)return '';
   const chip=(r,kind)=>{ const p=priceB(b,r); const hot=p>=2; const col=kind==='buy'?(hot?'var(--red)':'var(--parch2)'):(hot?'var(--gold)':'var(--green)');
     return `<span class="pchip" style="color:${col}">${kind==='buy'?'kupuje':'sprzedaje'} ${resIcon(r)}${r} <b>${p.toFixed(1)}</b></span>`; };
@@ -232,7 +233,7 @@ function prodRows(c){
 }
 // RYNEK tab: each traded good with the town's going price + a heat bar (the giełda at a glance)
 function rynekTab(c){
-  const goods=['jedzenie','zboże','ryby','sól','drewno','kamień','deski','ruda','metal','towary'];
+  const goods=['jedzenie','zboże','ryby','mięso','sól','drewno','kamień','deski','ruda','metal','futra','skóry','towary'];
   const st=townGoods(c);
   const rows=goods.map(r=>{ const price=townPrice(c,r), have=Math.floor(st[r]||0);
     const pct=Math.min(100,Math.round(price/5*100)), hot=price>=2;

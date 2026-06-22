@@ -344,8 +344,8 @@ function genWorld(seed){
   const valueAt=(ci,res)=>townPrice(cities[ci],res)*ECON.tradeVal;        // gold/unit at a town
   const STRATS=[
     {name:'spożywcza', goods:['jedzenie','zboże','ryby','sól','mięso']},  // staples: steady demand
-    {name:'surowcowa', goods:['drewno','kamień','ruda']},                 // bulk materials
-    {name:'luksusowa', goods:['metal','deski','towary']},                 // high-value, thin/volatile
+    {name:'surowcowa', goods:['drewno','kamień','ruda','futra']},         // bulk materials
+    {name:'luksusowa', goods:['metal','deski','towary','skóry']},         // high-value, thin/volatile
     {name:'wszystko',  goods:null} ];                                     // opportunist
   // caravan buys at town ci with ITS OWN gold (per strategy); returns cargo {res,qty,cost} or null
   const buyAt=(ci,m)=>{ const c=cities[ci],tally={};
