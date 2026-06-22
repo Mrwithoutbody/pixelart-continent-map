@@ -128,6 +128,22 @@ function placeEconomy(c,biome,rng){
     if(put)placed.push({x:put.x,y:put.y,spr:SPR[ECON_SPR[id]]||SPR.workshop,id,name:BLD[id].name}); }
   return placed;
 }
+// crop fields on open land around a town that has a farm. flat ground patches, spread out,
+// clear of buildings + each other. count scales a little with population.
+function placeFields(c,biome,rng){
+  const out=[], want=3+Math.min(4,Math.round(c.pop/700)+(rng()*2|0));
+  const blocked=c.houses.concat(c.builds);
+  for(let t=0;t<90 && out.length<want;t++){
+    const a=rng()*6.2832, rad=7+rng()*11;
+    const x=Math.round(c.x+Math.cos(a)*rad), y=Math.round(c.y+Math.sin(a)*rad*0.78);
+    if(!(x>=1&&y>=1&&x<W-1&&y<H-1))continue;
+    const b=biome[y*W+x]; if(b!==BIOME.GRASS&&b!==BIOME.DESERT)continue;     // crops on open land only
+    if(blocked.some(o=>Math.abs(o.x-x)<6&&Math.abs(o.y-y)<5))continue;       // clear of buildings
+    if(out.some(o=>Math.abs(o.x-x)<8&&Math.abs(o.y-y)<6))continue;          // spread fields apart
+    out.push({x,y,spr:SPR.fields[(x+y)&1]});
+  }
+  return out;
+}
 function genWorld(seed){
   const rng=mulberry32(seed);
   const nH=makeNoise(seed), nW1=makeNoise(seed^0x1111), nW2=makeNoise(seed^0x2222), nM=makeNoise(seed^0x9e37), nD=makeNoise(seed*7+1);
@@ -165,7 +181,7 @@ function genWorld(seed){
   const isWater=i=>biome[i]<=BIOME.SHALLOW;
 
   // ---- cities on buildable land (grass/beach/desert), min spacing ----
-  const cities=[]; let tries=0;
+  const cities=[], fields=[]; let tries=0;   // fields = all crop patches across farming towns
   const buildable=i=>{const b=biome[i];return b===BIOME.GRASS||b===BIOME.BEACH||b===BIOME.DESERT;};
   while(cities.length<CITY_COUNT && tries<20000){tries++;
     const x=8+rng()*(W-16)|0, y=8+rng()*(H-16)|0, i=y*W+x;
@@ -195,6 +211,8 @@ function genWorld(seed){
       h.spr = h.btype==='shack'?SPR.hut : h.btype==='manor'?SPR.manor
             : h.btype==='townhouse'?SPR.townhouse : (((h.x+h.y)&1)?SPR.house:SPR.cottage); });
     c.builds=placeEconomy(c,biome,rng);                        // economy buildings on the outskirts
+    c.fields = c.builds.some(b=>b.id==='farm') ? placeFields(c,biome,rng) : [];   // farm -> crop fields nearby
+    for(const f of c.fields) fields.push(f);
     const all=c.houses.concat(c.builds);
     c.r=all.reduce((m,h)=>Math.max(m,Math.hypot(h.x-c.x,h.y-c.y)),1.5);
     c.minY=all.reduce((m,h)=>Math.min(m,h.y),c.y);
@@ -289,7 +307,7 @@ function genWorld(seed){
     const dest=reach[rng()*reach.length|0],route=planRoute(home,dest);if(!route||!route.length)continue;
     merchants.push({home,dest,f:rng()<0.5?cities[home].f:-1,segs:segmentsFor(route),si:0,t:rng(),speed:0.10+rng()*0.10});}
 
-  const world={seed,W,H,height,moist,biome,cost,fac,cities,edges,adj,cadj,merchants,trees,bushes,peaks,hills,rocks,
+  const world={seed,W,H,height,moist,biome,cost,fac,cities,edges,adj,cadj,merchants,trees,bushes,peaks,hills,rocks,fields,
     bitmap:bakeTerrain(height,moist,biome,fac)};
   // runtime route replanning (called when a caravan reaches its destination)
   world.replan=m=>{const home=m.dest,reach=reachableFrom(home);
@@ -434,8 +452,10 @@ function render(){
   ctx.fillStyle=PAL.deep;ctx.fillRect(0,0,cv.width,cv.height);
   const[ox,oy]=w2s(0,0);
   ctx.drawImage(WORLD.bitmap,0,0,W,H,Math.round(ox),Math.round(oy),Math.ceil(W*cam.zoom),Math.ceil(H*cam.zoom));
+  const vb=viewBounds();
+  for(const f of WORLD.fields) if(f.x>=vb.x0&&f.x<=vb.x1&&f.y>=vb.y0&&f.y<=vb.y1) blit(f.spr,f.x,f.y,false); // flat ground, no shadow
   drawRoads();
-  const vb=viewBounds(), ents=[];
+  const ents=[];
   for(const p of WORLD.peaks) if(p.x>=vb.x0&&p.x<=vb.x1&&p.y>=vb.y0&&p.y<=vb.y1) ents.push(p);
   for(const h of WORLD.hills) if(h.x>=vb.x0&&h.x<=vb.x1&&h.y>=vb.y0&&h.y<=vb.y1) ents.push(h);
   for(const r of WORLD.rocks) if(r.x>=vb.x0&&r.x<=vb.x1&&r.y>=vb.y0&&r.y<=vb.y1) ents.push(r);

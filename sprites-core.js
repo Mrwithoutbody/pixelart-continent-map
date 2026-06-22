@@ -21,7 +21,7 @@ function bake(d){ return pxSprite(d.rows,d.pal,d.oyBottom!==false); }
 // built sprite atlas — same shape map.js expects.
 const SPR={house:null,cottage:null,townhouse:null,manor:null,hut:null,workshop:null,
   chapel:null,tower:null,windmill:null,market:null,
-  trees:[],bushes:[],hills:[],rocks:[],mountains:[],cart:null,ship:null};
+  trees:[],bushes:[],hills:[],rocks:[],mountains:[],fields:[],cart:null,ship:null};
 
 // assemble atlas from the three system registries (loaded after this file).
 function buildSprites(){
@@ -32,6 +32,7 @@ function buildSprites(){
   SPR.trees    =[bake(VEG_SPRITES.tree), pineSprite(), bake(VEG_SPRITES.smallTree)];
   SPR.bushes   =[bake(VEG_SPRITES.bush), bake(VEG_SPRITES.bushSmall)];
   SPR.rocks    =[bake(ROCK_SPRITES.rockA), bake(ROCK_SPRITES.rockB)];
+  SPR.fields   =[bake(FIELD_SPRITES.green), bake(FIELD_SPRITES.wheat)];
   SPR.hills    =[makeHill(13), makeHill(17)];
   SPR.mountains=[makeMountain(16), makeMountain(20), makeMountain(26)];
   // --- units ---

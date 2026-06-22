@@ -44,6 +44,28 @@ const ROCK_SPRITES={
   rockB:{pal:ROCK_PAL,rows:[".KK.","KLSK","KKKK"]},
 };
 
+// ---- crop fields (const grids) — flat ground patches, plowed vertical furrows.
+// drawn without a cast shadow (flat ground). soil 'd', crop rows 'C'/'c', edge 'K'.
+const FIELD_SPRITES={
+  green:{pal:{K:'#3a2a18',d:'#7a5a36',C:'#7fae3e',c:'#6c9a32'},rows:[
+    ".KKKKKKKKKKK.",
+    "KdCdcdCdcdCK",
+    "KdCdcdCdcdCK",
+    "KdCdcdCdcdCK",
+    "KdCdcdCdcdCK",
+    "KdCdcdCdcdCK",
+    ".KKKKKKKKKKK.",
+  ]},
+  wheat:{pal:{K:'#4a3416',d:'#8a6a3c',C:'#d9bb52',c:'#c2a23f'},rows:[
+    ".KKKKKKKKK.",
+    "KdCdcdCdCK",
+    "KdCdcdCdCK",
+    "KdCdcdCdCK",
+    "KdCdcdCdCK",
+    ".KKKKKKKKK.",
+  ]},
+};
+
 // ---- procedural: conifer (2nd tree species — soft, not a black spike) ----
 function pineSprite(){
   const half=4, fh=Math.round(half*1.7), th=2, h=fh+th, w=2*half+1;
