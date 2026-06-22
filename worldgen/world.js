@@ -44,7 +44,7 @@ function carveRivers(height,biome,cost,SL){
   // 3) per sizable lake: pick the shore tile with the cheapest route, carve it back to the sea.
   const MINSZ=5, SLh=SL-0.05;
   const dig=i=>{ if(biome[i]>BIOME.SHALLOW)biome[i]=BIOME.SHALLOW; if(height[i]>SLh)height[i]=SLh; cost[i]=COST[biome[i]]; };
-  const digWide=(i,wide)=>{ const x=i%W,y=(i/W)|0, hi=wide?3:2;     // 4-wide base, 5-wide if wide (+1px)
+  const digR=(i,hi)=>{ const x=i%W,y=(i/W)|0;                       // dig a square brush, half-extent hi (width hi+2)
     for(let dy=-1;dy<=hi;dy++)for(let dx=-1;dx<=hi;dx++){ const nx=x+dx,ny=y+dy;
       if(nx>=0&&ny>=0&&nx<W&&ny<H)dig(ny*W+nx); } };
   const best=new Int32Array(nlab).fill(-1);
@@ -54,8 +54,10 @@ function carveRivers(height,biome,cost,SL){
     if(x>0)chk(i-1); if(x<W-1)chk(i+1); if(y>0)chk(i-W); if(y<H-1)chk(i+W);
   }
   for(let L=0;L<nlab;L++){ if(L===ocean||best[L]<0)continue;
-    const wide=rnd(best[L]^0x55)<0.6;                               // ~60% of rivers a pixel wider
-    let t=best[L]; while(par[t]!==t){ digWide(t,wide); t=par[t]; }  // shore -> sea, becomes water
+    const base=rnd(best[L]^0x55)<0.6?3:2;                           // ~60% of rivers a pixel wider
+    const path=[]; let t=best[L]; while(par[t]!==t){ path.push(t); t=par[t]; }   // shore -> sea (last tiles = the mouth)
+    for(let k=0;k<path.length;k++){ const fromMouth=path.length-1-k;
+      digR(path[k], base + Math.min(2,Math.max(0,3-fromMouth))); }  // gentle delta: fan the last ~3 tiles out into the sea
   }
 }
 
