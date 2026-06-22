@@ -400,33 +400,61 @@ function genWorld(seed){
     c.minY=all.reduce((m,h)=>Math.min(m,h.y),c.y);
   }
 
-  // ---- houses + chronicle: each faction is a noble House (Dune / GoT flavour) with a seat,
-  //      a motto, a dominant trade, and a web of wars / alliances / rivalries that give the map a past ----
+  // ---- houses + characters + chronicle: each faction is a noble House (Dune / GoT flavour) with a
+  //      ruling lord, an heir, a motto/trade, blood ties to other Houses, legends, and a past of
+  //      wars / alliances / rivalries — emergent stories woven from the map ----
+  const pick=a=>a[rng()*a.length|0];
   const HSYL=['kar','vel','dra','mor','thal','ys','gorn','bel','rha','tyr','wen','ost','cael','dun','var','sel','grim','ah'];
-  const houseName=()=>{ const s=HSYL[rng()*HSYL.length|0]+HSYL[rng()*HSYL.length|0]; return s[0].toUpperCase()+s.slice(1); };
+  const FNAME_M=['Aldric','Beren','Cedrik','Doran','Edmar','Garr','Hektor','Ivo','Joran','Kael','Lorn','Marek','Nestor','Oswin','Roald','Teon','Ulryk','Wace'];
+  const FNAME_F=['Aela','Brina','Cora','Dagna','Elsa','Gwyn','Hela','Ilka','Jorun','Lena','Mira','Nela','Ofka','Rina','Sela','Talia','Wanda','Ysa'];
+  const EPITHET=['Stary','Żelazny','Okrutny','Sprawiedliwy','Chytry','Pobożny','Ślepy','Wielki','Czarny','Cichy','Rudy','Łaskawy'];
+  const TITLE=['Lord','Książę','Hrabia','Kasztelan','Wielmoża'];
   const MOTTOS=['Krew i Kamień','Wierni do końca','Z morza nasza siła','Żelazo się nie gnie','Pod jednym niebem',
     'Cisza przed burzą','Korzeń i Korona','Ogień nie pyta','Sól ziemi','Głębiej niż góry'];
   const TRAITS=['kupiecki','wojowniczy','pobożny','skryty','dumny','żeglarski','górniczy'];
+  const person=()=>{ const female=rng()<0.45, fn=female?pick(FNAME_F):pick(FNAME_M);
+    const full = rng()<0.5 ? `${fn} ${pick(EPITHET)}` : fn;
+    return {full, female, age:24+(rng()*48|0)}; };
+  const houseName=()=>{ const s=HSYL[rng()*HSYL.length|0]+HSYL[rng()*HSYL.length|0]; return s[0].toUpperCase()+s.slice(1); };
   const usedF=[...new Set(cities.map(c=>c.f))].sort((a,b)=>a-b);
   const houses=usedF.map(f=>{ const own=cities.filter(c=>c.f===f);
     const seat=own.find(c=>c.seat)||own.slice().sort((a,b)=>b.pop-a.pop)[0];
+    const ruler=person(), heir=person();
     return {f, name:houseName(), faction:FACTIONS[f].name, color:FACTIONS[f].flag,
-      seat:seat?seat.name:'—', role:seat?seat.role:'—', motto:MOTTOS[rng()*MOTTOS.length|0],
-      trait:TRAITS[rng()*TRAITS.length|0], founded:180+(rng()*620|0), towns:own.length}; });
+      seat:seat?seat.name:'—', role:seat?seat.role:'—', motto:pick(MOTTOS), trait:pick(TRAITS),
+      founded:180+(rng()*620|0), towns:own.length, title:pick(TITLE), ruler, heir}; });
   const hByF=new Map(houses.map(h=>[h.f,h]));
-  for(const c of cities) c.houseName = (hByF.get(c.f)||{}).name || '—';
-  // pairwise relations
-  const relations=[];
-  for(let i=0;i<houses.length;i++)for(let j=i+1;j<houses.length;j++){ const r=rng();
-    relations.push({a:i,b:j, rel: r<0.22?'wojna': r<0.40?'sojusz': r<0.64?'rywalizacja':'pokój'}); }
-  // a short chronicle, oldest house first
+  for(const c of cities) c.houseName=(hByF.get(c.f)||{}).name||'—';
+
+  // pairwise relations, each with a generated cause; alliances are sealed by marriage (a blood tie)
+  const relations=[], ties=[];
+  for(let i=0;i<houses.length;i++)for(let j=i+1;j<houses.length;j++){ const A=houses[i],B=houses[j],r=rng();
+    const rel = r<0.22?'wojna': r<0.40?'sojusz': r<0.64?'rywalizacja':'pokój';
+    let cause='';
+    if(rel==='wojna') cause=pick([`spór o ${A.role} i ${B.role}`,`krew przelana pod ${A.seat}`,
+      `${B.title} ${B.ruler.full} odmówił trybutu`,`zdrada przy stole w ${A.seat}`]);
+    else if(rel==='sojusz'){ const bride=person(); cause=`małżeństwo: ${bride.full} z Rodu ${A.name} poślubia dziedzica ${B.heir.full}`;
+      ties.push({a:i,b:j,bride:bride.full}); }
+    else if(rel==='rywalizacja') cause=pick([`rywalizacja o handel ${A.role}`,`stary spór graniczny`,`obie pretendują do ${A.seat}`]);
+    relations.push({a:i,b:j,rel,cause}); }
+
+  // legends / curiosities tied to actual towns -> flavour that feels like local history
+  const LEG=[ c=>`Pod ${c.name} podobno śpi smok, nie widziany od pokoleń.`,
+    c=>`Studnia w ${c.name} nigdy nie wysycha — zwą ją Łzą Bogów.`,
+    c=>`W lasach koło ${c.name} znikają wędrowcy; winią Zielonego Łowcę.`,
+    c=>`Sztolnie ${c.name} sięgają tak głęboko, że słychać bicie serca góry.`,
+    c=>`Mówią, że ${c.name} wzniesiono na kościach starszego miasta.`,
+    c=>`Targ w ${c.name} raz w roku odwiedza milczący kupiec, który płaci złotem bez stempla.` ];
+  const legends=[]; { const pool=cities.slice().sort(()=>rng()-0.5).slice(0,3);
+    pool.forEach((c,i)=>legends.push(LEG[(rng()*LEG.length|0)](c))); }
+
+  // chronicle: foundings (with the first lords), marriages, wars — named, dated, oldest first
   const events=[];
-  const byAge=houses.map((h,i)=>({h,i})).sort((p,q)=>p.h.founded-q.h.founded);
-  for(const{h}of byAge.slice(0,2)) events.push(`${h.founded}: Ród ${h.name} obejmuje ${h.seat}.`);
-  for(const rl of relations){ const A=houses[rl.a].name,B=houses[rl.b].name;
-    if(rl.rel==='wojna') events.push(`Wojna: Ród ${A} przeciw Rodowi ${B}.`);
-    else if(rl.rel==='sojusz') events.push(`Sojusz Rodów ${A} i ${B}.`); }
-  if(events.length>9) events.length=9;
+  const byAge=houses.slice().sort((p,q)=>p.founded-q.founded);
+  for(const h of byAge.slice(0,2)) events.push(`${h.founded}: ${h.title} ${h.ruler.full} z Rodu ${h.name} obejmuje ${h.seat}.`);
+  for(const t of ties) events.push(`Więzy krwi: ${t.bride} łączy Rody ${houses[t.a].name} i ${houses[t.b].name}.`);
+  for(const rl of relations) if(rl.rel==='wojna') events.push(`Wojna ${houses[rl.a].name} z ${houses[rl.b].name} — ${rl.cause}.`);
+  if(events.length>10) events.length=10;
 
   // ---- territory: each LAND tile owned by nearest city -> its faction ----
   const fac=new Int8Array(N).fill(-1);
@@ -507,7 +535,7 @@ function genWorld(seed){
     merchants.push({home,dest,f:rng()<0.5?cities[home].f:-1,segs:segmentsFor(route),si:0,t:rng(),speed:0.10+rng()*0.10});}
 
   const world={seed,W,H,height,moist,biome,cost,fac,cities,edges,adj,cadj,merchants,trees,bushes,peaks,hills,rocks,fields,bridges,roadPaths,
-    houses,relations,events,bitmap:bakeTerrain(height,moist,biome,fac)};
+    houses,relations,ties,legends,events,bitmap:bakeTerrain(height,moist,biome,fac)};
   // runtime route replanning (called when a caravan reaches its destination)
   world.replan=m=>{const home=m.dest,reach=reachableFrom(home);
     if(!reach.length){m.si=0;m.t=0;return;}
@@ -609,6 +637,7 @@ function updateInfo(){
    +`<div class="ibody">`
    + `<div class="fac"><span class="sw" style="background:${f.flag}"></span>Ród ${house?house.name:f.name}`
    +   (c.seat?` <span class="port">★ stolica</span>`:'')+(c.port?` <span class="port">⚓ port</span>`:'')+`</div>`
+   + (house?`<div class="stat"><span>włada</span><b>${house.title} ${house.ruler.full}</b></div>`:'')
    + `<div class="stat"><span>populacja</span><b>${c.pop.toLocaleString('pl')}</b></div>`
    + `<div class="stat"><span>gospodarka</span><b>${c.role||'—'}</b></div>`
    + `<div class="stat"><span>biom</span><b>${BIOME_NAME[WORLD.biomeAt(c.x,c.y)]}</b></div>`

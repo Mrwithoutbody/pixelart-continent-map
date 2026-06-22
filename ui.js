@@ -64,15 +64,18 @@ const UI=(()=>{
 // map.js's regen() can refresh it after a new map; UI.toggleChronicle() shows/hides it.
 function renderChronicle(){
   const el=document.getElementById('chronicle'); if(!el||!WORLD||!WORLD.houses)return;
-  const H=WORLD.houses, R=WORLD.relations||[], E=WORLD.events||[];
+  const H=WORLD.houses, R=WORLD.relations||[], E=WORLD.events||[], L=WORLD.legends||[];
   const relName={wojna:'⚔ wojna',sojusz:'🤝 sojusz',rywalizacja:'⚑ rywalizacja',pokój:'pokój'};
   let h=`<div class="ihead"><span class="nm">KRONIKI</span><span class="x" onclick="UI.toggleChronicle()">✕</span></div><div class="ibody">`;
   h+=`<div class="sect">rody (${H.length})</div>`;
   for(const o of H) h+=`<div class="hrow"><span class="sw" style="background:${o.color}"></span> <b>Ród ${o.name}</b> — ${o.seat}`
+    +`<br><span class="dim">${o.title} ${o.ruler.full} (${o.ruler.age}) · dziedzic: ${o.heir.full}</span>`
     +`<br><span class="dim">„${o.motto}” · ${o.trait} · ${o.role} · ${o.towns} miast · zał. ${o.founded}</span></div>`;
   const wars=R.filter(r=>r.rel!=='pokój');
   if(wars.length){ h+=`<div class="sect">stosunki</div>`;
-    for(const r of wars) h+=`<div class="li"><span>${H[r.a].name} — ${H[r.b].name}</span><span>${relName[r.rel]}</span></div>`; }
+    for(const r of wars) h+=`<div class="rel"><div class="li"><span>${H[r.a].name} — ${H[r.b].name}</span><span>${relName[r.rel]}</span></div>`
+      +(r.cause?`<div class="dim cause">${r.cause}</div>`:'')+`</div>`; }
+  if(L.length){ h+=`<div class="sect">legendy</div>`; for(const t of L) h+=`<div class="ev">${t}</div>`; }
   if(E.length){ h+=`<div class="sect">kronika</div>`; for(const e of E) h+=`<div class="ev">${e}</div>`; }
   h+=`</div>`; el.innerHTML=h;
 }
