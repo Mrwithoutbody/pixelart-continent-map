@@ -272,58 +272,79 @@ function genWorld(seed){
       let dm=1e9; for(const c of arr) dm=Math.min(dm,Math.hypot(c.x-x,c.y-y));
       if(dm>bd){bd=dm;best={x,y};} } return best; };
 
-  const buildNetwork=()=>{
-    const C=[];                                                  // {x,y,f,major}
-    for(let f=0;f<F;f++){ const s=spreadSpot(C); if(s)C.push({x:s.x,y:s.y,f,major:true}); }       // 1 capital / faction
-    for(let f=0;f<F;f++){ if(rng()<0.45){ const s=spreadSpot(C); if(s)C.push({x:s.x,y:s.y,f,major:true}); } } // ~half get a 2nd
-    const nMaj=C.length; if(nMaj<2) return null;
-    // 2) MST over capitals (bridge-aware cost)
-    const cand=[];
-    for(let a=0;a<nMaj;a++)for(let b=a+1;b<nMaj;b++){ const ws=spanPts(C[a].x,C[a].y,C[b].x,C[b].y); if(!ws)continue;
+  const capital=(C,f)=>{ const s=spreadSpot(C); if(s)C.push({x:s.x,y:s.y,f,major:true}); };
+  const near=(C,x,y,minD)=>C.some(c=>Math.hypot(c.x-x,c.y-y)<minD);
+  const scatter=(C,count,minD)=>{ for(let k=0;k<count*8&&count>0;k++){            // drop minor towns on open land
+    const x=8+rng()*(W-16)|0,y=8+rng()*(H-16)|0; if(!buildable(y*W+x)||near(C,x,y,minD))continue;
+    C.push({x,y,f:0,major:false}); count--; } };
+
+  // ---- layout scenarios: different ways the realm's towns are arranged ----
+  const SCENARIOS=[
+    { name:'Zjednoczone Królestwo', place:C=>{                                   // many towns -> dense linked realm
+        for(let f=0;f<F;f++)capital(C,f);
+        for(let f=0;f<F;f++)if(rng()<0.5)capital(C,f);
+        scatter(C,12+(rng()*8|0),30); } },
+    { name:'Miasta-Państwa', place:C=>{                                          // tight clusters per faction
+        for(let f=0;f<F;f++){ const s=spreadSpot(C); if(!s)continue; C.push({x:s.x,y:s.y,f,major:true});
+          let sat=1+(rng()*3|0);
+          for(let k=0;k<sat*6;k++){ const a=rng()*6.2832,r=18+rng()*26, x=(s.x+Math.cos(a)*r)|0,y=(s.y+Math.sin(a)*r)|0;
+            if(onLand(x,y)&&!near(C,x,y,14)){C.push({x,y,f,major:false}); if(--sat<=0)break;} } } } },
+    { name:'Pogranicze', place:C=>{                                             // few capitals, long spur chains
+        const caps=Math.max(2,Math.round(F*0.6));
+        for(let f=0;f<caps;f++)capital(C,f%F);
+        scatter(C,5+(rng()*5|0),34); } },
+  ];
+
+  // link every town with a bridge-aware MST over ALL pairs -> one connected network across the
+  // continent (towns left unreachable by short bridges are true islands handled by sea trade).
+  const linkTowns=C=>{ const n=C.length, cand=[];
+    for(let a=0;a<n;a++)for(let b=a+1;b<n;b++){ const ws=spanPts(C[a].x,C[a].y,C[b].x,C[b].y); if(!ws)continue;
       cand.push([ws.d+ws.bridgeTiles*6,a,b]); }
     cand.sort((p,q)=>p[0]-q[0]);
-    const par=C.map((_,i)=>i), find=i=>{while(par[i]!==i){par[i]=par[par[i]];i=par[i];}return i;};
-    let E=[]; for(const[d,a,b]of cand){const ra=find(a),rb=find(b); if(ra!==rb){par[ra]=rb;E.push([a,b]);}}
-    // 3) Steiner forks: a capital with >=2 roads gets a fork TOWN at the Fermat point (Weiszfeld),
-    //    turning its outgoing "V" into a "Y" with a small town sitting at the centre.
-    for(let m=0;m<nMaj;m++){
+    const par=C.map((_,i)=>i),find=i=>{while(par[i]!==i){par[i]=par[par[i]];i=par[i];}return i;};
+    const E=[]; for(const[d,a,b]of cand){const ra=find(a),rb=find(b); if(ra!==rb){par[ra]=rb;E.push([a,b]);}}
+    return E; };
+
+  // resolve each capital's road fork into a "Y": a fork town at the Fermat point (Weiszfeld median)
+  const steinerForks=(C,E)=>{ const majIdx=C.map((c,i)=>c.major?i:-1).filter(i=>i>=0);
+    for(const m of majIdx){
       const neigh=[]; for(const[a,b]of E){ if(a===m)neigh.push(b); else if(b===m)neigh.push(a); }
       if(neigh.length<2)continue;
-      const pts=[m,...neigh];
-      let sx=0,sy=0; for(const p of pts){sx+=C[p].x;sy+=C[p].y;} sx/=pts.length; sy/=pts.length;
+      const pts=[m,...neigh]; let sx=0,sy=0; for(const p of pts){sx+=C[p].x;sy+=C[p].y;} sx/=pts.length; sy/=pts.length;
       for(let it=0;it<16;it++){ let wx=0,wy=0,wsum=0; for(const p of pts){ const dx=C[p].x-sx,dy=C[p].y-sy,dd=Math.hypot(dx,dy)||1e-3; wx+=C[p].x/dd;wy+=C[p].y/dd;wsum+=1/dd; } sx=wx/wsum; sy=wy/wsum; }
       sx|=0; sy|=0; if(!onLand(sx,sy))continue;
-      if(spanPts(C[m].x,C[m].y,sx,sy)==null)continue;                       // every arm must be a valid road
-      if(neigh.some(ni=>spanPts(C[ni].x,C[ni].y,sx,sy)==null))continue;
+      if(spanPts(C[m].x,C[m].y,sx,sy)==null||neigh.some(ni=>spanPts(C[ni].x,C[ni].y,sx,sy)==null))continue;
       const S=C.length; C.push({x:sx,y:sy,f:C[m].f,major:false});
-      E=E.filter(([a,b])=>!(a===m||b===m));                                 // drop the capital's arms
-      E.push([m,S]); for(const ni of neigh) E.push([S,ni]);                 // re-root through the fork town
-    }
-    // 4) spurs ("dyszel"): 1-3 lone towns chained off the network by a single road
-    const spurs=2+(rng()*4|0);
-    for(let s=0;s<spurs;s++){
-      let fi=rng()*C.length|0, fx=C[fi].x, fy=C[fi].y;
+      for(let k=E.length-1;k>=0;k--) if(E[k][0]===m||E[k][1]===m) E.splice(k,1);   // drop capital's arms
+      E.push([m,S]); for(const ni of neigh) E.push([S,ni]);                        // re-root through the fork town
+    } return E; };
+
+  // hang a few lone 1-3 town chains ("dyszel") off the network by a single road each
+  const addSpurs=(C,E)=>{ const spurs=2+(rng()*4|0);
+    for(let s=0;s<spurs;s++){ let fi=rng()*C.length|0, fx=C[fi].x, fy=C[fi].y;
       const ang=rng()*6.2832, len=1+(rng()*3|0);
-      for(let k=0;k<len;k++){
-        const dist=26+rng()*30, nx=(fx+Math.cos(ang)*dist)|0, ny=(fy+Math.sin(ang)*dist)|0;
-        if(!onLand(nx,ny))break;
-        if(C.some(c=>Math.hypot(c.x-nx,c.y-ny)<22))break;
-        if(spanPts(fx,fy,nx,ny)==null)break;
-        const idx=C.length; C.push({x:nx,y:ny,f:C[fi].f,major:false});
-        E.push([fi,idx]); fi=idx; fx=nx; fy=ny;
-      }
-    }
-    return {C,E};
+      for(let k=0;k<len;k++){ const dist=26+rng()*30, nx=(fx+Math.cos(ang)*dist)|0, ny=(fy+Math.sin(ang)*dist)|0;
+        if(!onLand(nx,ny)||near(C,nx,ny,22)||spanPts(fx,fy,nx,ny)==null)break;
+        const idx=C.length; C.push({x:nx,y:ny,f:C[fi].f,major:false}); E.push([fi,idx]); fi=idx; fx=nx; fy=ny; } }
+    return E; };
+
+  const buildNetwork=()=>{
+    const sc=SCENARIOS[rng()*SCENARIOS.length|0]; const C=[]; sc.place(C);
+    const majs=C.filter(c=>c.major); if(majs.length<1||C.length<2) return null;
+    for(const c of C){ if(c.major)continue; let bf=0,bd=1e18;                     // minor town -> nearest capital's faction
+      for(const m of majs){const dd=(m.x-c.x)**2+(m.y-c.y)**2; if(dd<bd){bd=dd;bf=m.f;}} c.f=bf; }
+    let E=linkTowns(C); E=steinerForks(C,E); E=addSpurs(C,E);
+    return {C,E,scenario:sc.name};
   };
   // planar test: reject any layout where two road segments cross (excluding shared endpoints)
   const planar=(C,E)=>{ for(let i=0;i<E.length;i++)for(let j=i+1;j<E.length;j++){
     const[a,b]=E[i],[c,d]=E[j]; if(a===c||a===d||b===c||b===d)continue;
     if(segCross(C[a],C[b],C[c],C[d])) return false; } return true; };
 
-  let cities=null, edges=null;
+  let cities=null, edges=null, scenario='';
   for(let attempt=0;attempt<60 && !cities;attempt++){ const r=buildNetwork();
-    if(r&&r.C.length>=3&&planar(r.C,r.E)){ cities=r.C; edges=r.E; } }      // rebuild until crossing-free
-  if(!cities){ const r=buildNetwork()||{C:[],E:[]}; cities=r.C;            // last resort: keep, drop crossings
+    if(r&&r.C.length>=3&&planar(r.C,r.E)){ cities=r.C; edges=r.E; scenario=r.scenario; } }   // rebuild until crossing-free
+  if(!cities){ const r=buildNetwork()||{C:[],E:[],scenario:'—'}; cities=r.C; scenario=r.scenario;  // last resort: drop crossings
     edges=r.E.filter((e,i)=>r.E.slice(0,i).every(o=>{const[a,b]=e,[c,d]=o;
       return a===c||a===d||b===c||b===d || !segCross(cities[a],cities[b],cities[c],cities[d]);})); }
 
@@ -420,7 +441,7 @@ function genWorld(seed){
     const dest=reach[rng()*reach.length|0],route=planRoute(home,dest);if(!route||!route.length)continue;
     merchants.push({home,dest,f:rng()<0.5?cities[home].f:-1,segs:segmentsFor(route),si:0,t:rng(),speed:0.10+rng()*0.10});}
 
-  const world={seed,W,H,height,moist,biome,cost,fac,cities,edges,adj,cadj,merchants,trees,bushes,peaks,hills,rocks,fields,bridges,
+  const world={seed,scenario,W,H,height,moist,biome,cost,fac,cities,edges,adj,cadj,merchants,trees,bushes,peaks,hills,rocks,fields,bridges,
     bitmap:bakeTerrain(height,moist,biome,fac)};
   // runtime route replanning (called when a caravan reaches its destination)
   world.replan=m=>{const home=m.dest,reach=reachableFrom(home);
@@ -626,7 +647,8 @@ function tick(now){const dt=Math.min(0.05,(now-last)/1000);last=now;
 // regen builds a fresh world (used by the generating screen + in-game "new map").
 function regen(seed){WORLD=genWorld(typeof seed==='number'?seed:(Math.random()*1e9|0));clampCam();
   selected=null;updateInfo();
-  const el=document.getElementById('seed');if(el)el.textContent=WORLD.seed;}
+  const el=document.getElementById('seed');if(el)el.textContent=WORLD.seed;
+  const sc=document.getElementById('scenario');if(sc)sc.textContent=WORLD.scenario;}
 // R = new map, but only while playing (start/gen screens own the keyboard otherwise).
 addEventListener('keydown',e=>{if((e.key==='r'||e.key==='R')&&document.body.dataset.screen==='game')regen();});
 buildSprites();
