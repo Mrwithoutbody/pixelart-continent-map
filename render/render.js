@@ -315,7 +315,7 @@ addEventListener('keydown',e=>{if((e.key==='r'||e.key==='R')&&document.body.data
 // ---------- quick-save (localStorage) ----------
 // The world is deterministic from its seed, so we persist only the seed + the player's
 // mutations (per-city stockpiles & built buildings) + camera. Continue = regen(seed) then overlay.
-const SAVE_KEY='mapk.save.v1';
+const SAVE_KEY='mapk.save.v2';   // v2: per-building stock + treasury (old v1 city-pool saves are dropped)
 function hasSave(){ try{ return !!localStorage.getItem(SAVE_KEY); }catch(e){ return false; } }
 function saveGame(){ if(!WORLD)return; try{
   const data={ seed:WORLD.seed, layer:WORLD.layer||'rody',

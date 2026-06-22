@@ -347,7 +347,7 @@ function genWorld(seed){
   // sell at the destination: it pays gold (only as much as it can afford & store); the producer earns it
   const unloadCargo=(ci,cargo)=>{ if(!cargo)return; const c=cities[ci];
     const free=Math.max(0,cityCap(c)-cityUsed(c)); if(free<=0)return;
-    const val=valueAt(ci,cargo.res), gold=c.gold||0, afford=val>0?Math.floor(gold/val):cargo.qty;
+    const val=valueAt(ci,cargo.res), gold=c.gold||0, afford=val>0?Math.floor(gold/val):0;
     const qty=Math.min(cargo.qty,free,afford); if(qty<=0)return;
     const stored=townGive(c,cargo.res,qty); c.gold=gold-stored*val;                       // buyer pays for what it stored
     if(cargo.from!=null) cities[cargo.from].gold=(cities[cargo.from].gold||0)+stored*val; };  // producer earns
