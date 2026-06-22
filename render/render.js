@@ -1,0 +1,170 @@
+// RENDER — canvas/camera setup, input, city-info panel, draw passes, loop + boot.
+const cv = document.getElementById('cv');
+const ctx = cv.getContext('2d');
+function fit(){ cv.width = innerWidth; cv.height = innerHeight; ctx.imageSmoothingEnabled = false; }
+addEventListener('resize', fit); fit();
+let WORLD=null;
+
+// ============================================================
+//  CAMERA
+// ============================================================
+const cam={x:W/2,y:H/2,zoom:3,min:1,max:16};
+function clampCam(){cam.zoom=Math.max(cam.min,Math.min(cam.max,cam.zoom));
+  const vw=cv.width/cam.zoom,vh=cv.height/cam.zoom;
+  cam.x=clamp(cam.x,Math.min(W/2,vw/2),Math.max(W/2,W-vw/2));
+  cam.y=clamp(cam.y,Math.min(H/2,vh/2),Math.max(H/2,H-vh/2));}
+function w2s(wx,wy){return [(wx-cam.x)*cam.zoom+cv.width/2,(wy-cam.y)*cam.zoom+cv.height/2];}
+function s2w(sx,sy){return [(sx-cv.width/2)/cam.zoom+cam.x,(sy-cv.height/2)/cam.zoom+cam.y];}
+let drag=null,downPos=null;
+cv.addEventListener('mousedown',e=>{drag={sx:e.clientX,sy:e.clientY,cx:cam.x,cy:cam.y};downPos={x:e.clientX,y:e.clientY};});
+addEventListener('mouseup',e=>{ if(downPos){const dx=e.clientX-downPos.x,dy=e.clientY-downPos.y; if(dx*dx+dy*dy<16) pickCity(e.clientX,e.clientY);} drag=null;downPos=null;});
+addEventListener('mousemove',e=>{if(!drag)return;cam.x=drag.cx-(e.clientX-drag.sx)/cam.zoom;cam.y=drag.cy-(e.clientY-drag.sy)/cam.zoom;clampCam();});
+
+// ---- selection + city info panel (GUI markup lives in index.html #info) ----
+let selected=null;
+const BIOME_NAME=['ocean','płycizna','plaża','pustynia','trawa','las','wzgórza','góry'];
+const RES_NAME={manor:'Dwór',townhouse:'Kamienica',house:'Dom',shack:'Chata'};
+const info=document.getElementById('info');
+function clearCity(){selected=null;updateInfo();}        // exposed for the panel close button
+function pickCity(sx,sy){ if(!WORLD)return; const[wx,wy]=s2w(sx,sy); let best=null,bd=1e9;
+  for(let i=0;i<WORLD.cities.length;i++){const c=WORLD.cities[i],d=Math.hypot(c.x-wx,c.y-wy);
+    if(d<c.r+3 && d<bd){bd=d;best=i;}}
+  selected=best; updateInfo(); }
+function updateInfo(){
+  if(selected==null||!WORLD){info.classList.remove('open');document.body.classList.remove('has-info');return;}
+  const c=WORLD.cities[selected],f=FACTIONS[c.f];
+  const house=WORLD.houses.find(h=>h.f===c.f);
+  const guild=c.guild>=0?WORLD.guilds[c.guild]:null, faith=WORLD.faiths[c.faith];
+  const comp={}; for(const h of c.houses) comp[h.btype]=(comp[h.btype]||0)+1;
+  const resRows=['manor','townhouse','house','shack'].filter(k=>comp[k])
+    .map(k=>`<div class="li"><span>${RES_NAME[k]}</span><span>${comp[k]}</span></div>`).join('');
+  const ecoRows=c.builds.length
+    ? c.builds.map(b=>`<div class="li eco"><span>${b.name}</span><span>·</span></div>`).join('')
+    : `<div class="li eco"><span>—</span><span></span></div>`;
+  info.innerHTML=
+    `<div class="ihead"><span class="nm">${c.name}</span><span class="x" onclick="clearCity()">✕</span></div>`
+   +`<div class="ibody">`
+   + `<div class="fac"><span class="sw" style="background:${f.flag}"></span>Ród ${house?house.name:f.name}`
+   +   (c.seat?` <span class="port">★ stolica</span>`:'')+(c.port?` <span class="port">⚓ port</span>`:'')+`</div>`
+   + (house?`<div class="stat"><span>włada</span><b>${house.title} ${house.ruler.full}</b></div>`:'')
+   + `<div class="stat"><span>populacja</span><b>${c.pop.toLocaleString('pl')}</b></div>`
+   + `<div class="stat"><span>gospodarka</span><b>${c.role||'—'}</b></div>`
+   + `<div class="stat"><span>gildia</span><b style="color:${guild?guild.color:'inherit'}">${guild?guild.name:'—'}</b></div>`
+   + `<div class="stat"><span>wiara</span><b style="color:${faith?faith.color:'inherit'}">${faith?faith.name:'—'}</b></div>`
+   + `<div class="stat"><span>biom</span><b>${BIOME_NAME[WORLD.biomeAt(c.x,c.y)]}</b></div>`
+   + `<div class="stat"><span>drogi</span><b>${WORLD.adj[selected].length}</b></div>`
+   + `<div class="sect">mieszkalne (${c.houses.length})</div><div class="list">${resRows}</div>`
+   + `<div class="sect">gospodarka (${c.builds.length})</div><div class="list">${ecoRows}</div>`
+   +`</div>`;
+  info.classList.add('open');document.body.classList.add('has-info');
+}
+cv.addEventListener('wheel',e=>{e.preventDefault();const[wx,wy]=s2w(e.clientX,e.clientY);
+  cam.zoom*=e.deltaY<0?1.12:1/1.12;clampCam();const[nx,ny]=s2w(e.clientX,e.clientY);cam.x+=wx-nx;cam.y+=wy-ny;clampCam();},{passive:false});
+
+// ============================================================
+//  RENDER
+// ============================================================
+function blit(fr,wx,wy,shadow=true){const[sx,sy]=w2s(wx,wy),z=cam.zoom;
+  if(shadow){ // minimal pixel-shadow: chunky blocks (src-px = z) sitting on the ground below the base
+    ctx.fillStyle='rgba(18,22,14,0.40)';
+    const bw=fr.sw*0.80, bw2=bw*0.55;
+    ctx.fillRect(Math.round(sx-bw*z/2),  Math.round(sy),     Math.ceil(bw*z),  Math.ceil(z)); // band at base
+    ctx.fillRect(Math.round(sx-bw2*z/2), Math.round(sy+z),   Math.ceil(bw2*z), Math.ceil(z)); // sliver in front
+  }
+  ctx.drawImage(fr.img,fr.sx,fr.sy,fr.sw,fr.sh,Math.round(sx-fr.ox*z),Math.round(sy-fr.oy*z),Math.ceil(fr.sw*z),Math.ceil(fr.sh*z));}
+function viewBounds(){const[x0,y0]=s2w(0,0),[x1,y1]=s2w(cv.width,cv.height);return{x0:x0-2,y0:y0-2,x1:x1+2,y1:y1+18};}
+function drawRoads(){ctx.strokeStyle=PAL.road;ctx.lineWidth=Math.max(2,Math.round(cam.zoom*1.1));
+  ctx.lineCap='butt';ctx.lineJoin='miter';ctx.setLineDash([Math.round(cam.zoom*2),Math.round(cam.zoom*1.4)]);ctx.beginPath();
+  for(const p of WORLD.roadPaths){ const pt=p.pts; let[px,py]=w2s(pt[0][0],pt[0][1]); ctx.moveTo(px,py);
+    for(let i=1;i<pt.length;i++){const[qx,qy]=w2s(pt[i][0],pt[i][1]); ctx.lineTo(qx,qy);} }   // bent polyline road
+  ctx.stroke();ctx.setLineDash([]);
+  // plain junction dots where a road bends (interior nodes)
+  if(cam.zoom>=2){ ctx.setLineDash([]); ctx.fillStyle=PAL.road;
+    for(const p of WORLD.roadPaths) for(let i=1;i+1<p.pts.length;i++){ const[bx,by]=w2s(p.pts[i][0],p.pts[i][1]);
+      const s=Math.max(2,cam.zoom*1.3); ctx.fillRect(Math.round(bx-s/2),Math.round(by-s/2),Math.ceil(s),Math.ceil(s)); } }}
+// wooden bridge decks over the water spans of the road network (drawn under the road dashes)
+function drawBridges(){const z=cam.zoom; ctx.lineCap='butt';ctx.lineJoin='miter';ctx.setLineDash([]);
+  for(const br of WORLD.bridges){const[x0,y0]=w2s(br.x0,br.y0),[x1,y1]=w2s(br.x1,br.y1);
+    let nx=y1-y0,ny=-(x1-x0);const L=Math.hypot(nx,ny)||1; nx/=L;ny/=L;          // perpendicular unit
+    const rail=Math.max(2,z*1.3);
+    ctx.strokeStyle='#5e3f22';ctx.lineWidth=Math.max(4,z*2.6);                    // dark underside / piles
+    ctx.beginPath();ctx.moveTo(x0,y0);ctx.lineTo(x1,y1);ctx.stroke();
+    ctx.strokeStyle='#8a5e34';ctx.lineWidth=Math.max(3,z*2.0);                    // plank deck
+    ctx.beginPath();ctx.moveTo(x0,y0);ctx.lineTo(x1,y1);ctx.stroke();
+    ctx.strokeStyle='#3a2616';ctx.lineWidth=Math.max(1,z*0.5);                    // two side rails
+    for(const s of[1,-1]){const ox=nx*rail*s,oy=ny*rail*s;
+      ctx.beginPath();ctx.moveTo(x0+ox,y0+oy);ctx.lineTo(x1+ox,y1+oy);ctx.stroke();}
+  }}
+function drawLabels(){if(cam.zoom<3)return;ctx.font=`bold ${Math.max(9,cam.zoom*1.6)}px monospace`;ctx.textBaseline='middle';ctx.textAlign='left';
+  const vb=viewBounds();
+  for(const c of WORLD.cities){ if(c.x<vb.x0||c.x>vb.x1||c.y<vb.y0||c.y>vb.y1)continue;
+    const[sx,sy]=w2s(c.x,c.minY-3);const h=cam.zoom*1.6+6, sw=h-2, tw=ctx.measureText(c.name).width, W2=sw+6+tw;
+    const x0=sx-W2/2, y0=sy-h/2;
+    ctx.fillStyle=PAL.labelEdge;ctx.fillRect(x0-1,y0-1,W2+2,h+2);
+    ctx.fillStyle=PAL.label;ctx.fillRect(x0,y0,W2,h);
+    ctx.fillStyle=FACTIONS[c.f].flag;ctx.fillRect(x0+2,y0+2,sw-2,h-4);   // faction swatch at start
+    ctx.fillStyle=PAL.labelEdge;ctx.strokeStyle=PAL.labelEdge;ctx.lineWidth=1;ctx.strokeRect(x0+2.5,y0+2.5,sw-3,h-5);
+    ctx.fillStyle=PAL.text;ctx.fillText(c.name,x0+sw+4,sy+1);}}
+function render(){
+  ctx.imageSmoothingEnabled=false;
+  ctx.fillStyle=PAL.deep;ctx.fillRect(0,0,cv.width,cv.height);
+  const[ox,oy]=w2s(0,0), DX=Math.round(ox),DY=Math.round(oy),DW=Math.ceil(W*cam.zoom),DH=Math.ceil(H*cam.zoom);
+  ctx.drawImage(WORLD.base,0,0,W,H,DX,DY,DW,DH);                              // terrain
+  ctx.drawImage(WORLD.layers[WORLD.layer],0,0,W,H,DX,DY,DW,DH);              // allegiance overlay (Houses/guilds/faiths)
+  const vb=viewBounds();
+  for(const f of WORLD.fields) if(f.x>=vb.x0&&f.x<=vb.x1&&f.y>=vb.y0&&f.y<=vb.y1) blit(f.spr,f.x,f.y,false); // flat ground, no shadow
+  drawBridges();   // wooden decks under the road dashes
+  drawRoads();
+  const ents=[];
+  for(const p of WORLD.peaks) if(p.x>=vb.x0&&p.x<=vb.x1&&p.y>=vb.y0&&p.y<=vb.y1) ents.push(p);
+  for(const h of WORLD.hills) if(h.x>=vb.x0&&h.x<=vb.x1&&h.y>=vb.y0&&h.y<=vb.y1) ents.push(h);
+  for(const r of WORLD.rocks) if(r.x>=vb.x0&&r.x<=vb.x1&&r.y>=vb.y0&&r.y<=vb.y1) ents.push(r);
+  for(const bsh of WORLD.bushes) if(bsh.x>=vb.x0&&bsh.x<=vb.x1&&bsh.y>=vb.y0&&bsh.y<=vb.y1) ents.push(bsh);
+  for(const t of WORLD.trees) if(t.x>=vb.x0&&t.x<=vb.x1&&t.y>=vb.y0&&t.y<=vb.y1) ents.push(t);
+  for(const c of WORLD.cities){
+    for(const h of c.houses) if(h.x>=vb.x0&&h.x<=vb.x1&&h.y>=vb.y0&&h.y<=vb.y1) ents.push(h);
+    for(const b of c.builds) if(b.x>=vb.x0&&b.x<=vb.x1&&b.y>=vb.y0&&b.y<=vb.y1) ents.push(b);
+  }
+  ents.sort((a,b)=>a.y-b.y);
+  for(const e of ents) blit(e.spr,e.x,e.y);
+  for(const m of WORLD.merchants){ if(!m.segs.length)continue;
+    const s=m.segs[Math.min(m.si,m.segs.length-1)];
+    const mx=s.x0+(s.x1-s.x0)*m.t, my=s.y0+(s.y1-s.y0)*m.t;
+    if(mx<vb.x0||mx>vb.x1||my<vb.y0||my>vb.y1) continue;
+    const spr = s.mode==='sea'?SPR.ship:SPR.cart;              // caravan turns into a ship on water legs
+    blit(spr,mx,my);
+    if(m.f>=0){ // faction-owned convoy -> flag in faction colour
+      const z=cam.zoom,[sx,sy]=w2s(mx,my), top=Math.round(sy-(spr.sh+1)*z);
+      ctx.fillStyle=OUTL; ctx.fillRect(Math.round(sx),top,Math.max(1,Math.round(z*0.5)),Math.ceil(z*3));
+      ctx.fillStyle=FACTIONS[m.f].flag; ctx.fillRect(Math.round(sx),top,Math.ceil(z*2),Math.ceil(z*1.5));
+    }}
+  if(selected!=null){const c=WORLD.cities[selected];const[sx,sy]=w2s(c.x,c.y);
+    const r=Math.round((c.r+4)*cam.zoom), lw=Math.max(3,Math.round(cam.zoom*1.1));
+    ctx.strokeStyle='#ffe066';ctx.lineWidth=lw;ctx.lineJoin='miter';ctx.setLineDash([]);
+    ctx.strokeRect(Math.round(sx)-r, Math.round(sy)-r, r*2, r*2);}   // chunky square bracket, no rounding
+  drawLabels();
+}
+
+// ============================================================
+//  LOOP
+// ============================================================
+let last=performance.now();
+function tick(now){const dt=Math.min(0.05,(now-last)/1000);last=now;
+  for(const m of WORLD.merchants){ if(!m.segs.length)continue;
+    const s=m.segs[m.si]; m.t+=m.speed*dt*20/s.len;
+    if(m.t>=1){ m.t=0; m.si++; if(m.si>=m.segs.length) WORLD.replan(m); }}
+  render();requestAnimationFrame(tick);}
+
+// ---------- boot ----------
+// regen builds a fresh world (used by the generating screen + in-game "new map").
+function regen(seed){WORLD=genWorld(typeof seed==='number'?seed:(Math.random()*1e9|0));clampCam();
+  selected=null;updateInfo();
+  if(typeof renderChronicle==='function') renderChronicle();
+  document.querySelectorAll('.lyr').forEach(b=>b.classList.toggle('on',b.dataset.l==='rody'));   // reset layer switch
+  const el=document.getElementById('seed');if(el)el.textContent=WORLD.seed;
+  const sc=document.getElementById('scenario');if(sc)sc.textContent=WORLD.houses.length+' rodów · '+WORLD.cities.length+' miast';}
+// R = new map, but only while playing (start/gen screens own the keyboard otherwise).
+addEventListener('keydown',e=>{if((e.key==='r'||e.key==='R')&&document.body.dataset.screen==='game')regen();});
+buildSprites();
+regen(Math.random()*1e9|0);          // a world to sit behind the start screen as a live backdrop
+requestAnimationFrame(tick);          // render loop always runs; UI overlays sit on top

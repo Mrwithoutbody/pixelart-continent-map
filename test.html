@@ -1,6 +1,6 @@
 <!DOCTYPE html><html><head><meta charset="utf-8"><style>body{margin:0;background:#88a548}canvas{image-rendering:pixelated}</style></head><body>
 <canvas id="t" width="1200" height="320"></canvas>
-<script src="sprites-core.js"></script><script src="sprites-buildings.js"></script><script src="sprites-terrain.js"></script><script src="sprites-units.js"></script><script>
+<script src="sprites/core.js"></script><script src="sprites/buildings.js"></script><script src="sprites/terrain.js"></script><script src="sprites/units.js"></script><script>
 buildSprites();const ctx=document.getElementById('t').getContext('2d');ctx.imageSmoothingEnabled=false;const Z=6;
 // every sprite category on one sheet — buildings, terrain (incl. procedural pine/hill/mountain), units.
 // each row baseline-aligned so anchor/oy regressions show up immediately.
