@@ -351,13 +351,15 @@ function genWorld(seed){
     const qty=Math.min(ECON.cargoCap, Math.floor(bv*0.8), Math.floor(m.gold*0.85/price));
     if(qty<=0)return null; const cost=qty*price; townTake(c,best,qty); c.gold=(c.gold||0)+cost; m.gold-=cost;  // caravan pays the seller town
     return {res:best,qty,cost}; };
-  // caravan sells at town ci; the town pays what it can afford & store, the caravan banks the revenue
-  const sellAt=(ci,m)=>{ const cargo=m.cargo; if(!cargo){ return; } const c=cities[ci];
+  // caravan sells what the town can afford & store; the REST it keeps and carries on to another market
+  // (a trader doesn't dump unsold goods — no artificial loss)
+  const sellAt=(ci,m)=>{ const cargo=m.cargo; if(!cargo)return; const c=cities[ci];
     const free=Math.max(0,cityCap(c)-cityUsed(c)), price=valueAt(ci,cargo.res), gold=c.gold||0;
     const afford=price>0?Math.floor(gold/price):0, qty=Math.min(cargo.qty,free,afford);
-    if(qty>0){ const rev=qty*price; townGive(c,cargo.res,qty); c.gold=gold-rev; m.gold+=rev;
-      m.profit=(m.profit||0)+rev-cargo.cost*(qty/cargo.qty); }
-    m.cargo=null; };                                                      // unsold remainder is written off (a loss)
+    if(qty>0){ const rev=qty*price, costPart=cargo.cost*(qty/cargo.qty);
+      townGive(c,cargo.res,qty); c.gold=gold-rev; m.gold+=rev; m.profit=(m.profit||0)+rev-costPart;
+      cargo.qty-=qty; cargo.cost-=costPart; }
+    if(cargo.qty<1) m.cargo=null; };                                     // fully sold -> empty; else keep the remainder
   // pick the best market, but discount it by distance × the caravan's RISK coefficient.
   // Low risk = bold, ranges far (hauls salt across the map); high risk = cautious, stays local.
   // For now risk is random per caravan. FUTURE: it should be derived from the CHRONICLES that build
@@ -390,10 +392,10 @@ function genWorld(seed){
     houses,relations,ties,legends,intrigues,events,guilds,guildRel,faiths,faithTension,
     base:bakeBase(height,moist,biome),layers,layer:'rody'};
   // runtime: caravan arrives -> sell, maybe go bankrupt, else buy again and route to the best market
-  world.replan=m=>{ sellAt(m.dest,m); m.gold-=ECON.caravanUpkeep;        // sell, then pay running costs
-    if(m.gold < ECON.caravanMinGold){ m.dead=true; return; }              // bankrupt -> removed by reap()
+  world.replan=m=>{ sellAt(m.dest,m);                                     // sell the haul
+    if(m.gold < ECON.caravanMinGold){ m.dead=true; return; }              // traded its purse away -> bankrupt, reaped
     const home=m.dest, reach=reachableFrom(home); if(!reach.length){ m.dead=true; return; }
-    m.home=home; m.cargo=buyAt(home,m);
+    m.home=home; if(!m.cargo) m.cargo=buyAt(home,m);    // buy only when empty; else carry the unsold remainder onward
     const dest=destFor(home,reach,m.cargo,Math.random,m.risk), route=planRoute(home,dest);
     if(!route){ m.si=0;m.t=0; return; }
     m.dest=dest; m.segs=segmentsFor(route); m.si=0; m.t=0; };
