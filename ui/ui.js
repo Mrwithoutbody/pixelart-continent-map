@@ -57,7 +57,7 @@ const UI=(()=>{
   return {
     setScreen, refreshContinue,
     newGame(){ runGen(readSeed()); },
-    continueGame(){ if(loadGame()){ setScreen('game'); } else { refreshContinue(); } },   // load quick-save, drop straight in
+    continueGame(){ if(WORLD||loadGame()) setScreen('game'); else refreshContinue(); },   // backdrop world already loaded at boot
     randomSeed(){ seedIn.value=String((Math.random()*1e9)>>>0); },
     regenInGame(){ regen(); saveGame(); },     // HUD "new map" — keep current camera, persist it
     toStart(){ clearCity(); document.getElementById('chronicle').classList.remove('open'); refreshContinue(); setScreen('start'); },
@@ -86,6 +86,7 @@ const UI=(()=>{
     let bi=0; WORLD.cities.forEach((c,i)=>{if(c.pop>WORLD.cities[bi].pop)bi=i;});
     const c=WORLD.cities[bi]; selected=bi; cam.x=c.x; cam.y=c.y; cam.zoom=8; clampCam(); updateInfo();
     return; }
+  if(hasSave()) loadGame();      // load the quick-save as the live (dimmed) backdrop behind the menu
   UI.refreshContinue();          // reveal "Kontynuj" only when a quick-save exists
   UI.setScreen('start');
 })();
