@@ -46,15 +46,21 @@ const UI=(()=>{
     clearTimeout(genTimer); genTimer=null;
     cam.x=W/2; cam.y=H/2; cam.zoom=3; clampCam();   // fresh overview
     setScreen('game');
+    saveGame();                                     // persist the freshly generated world to quick-save
   }
+
+  // show/hide the "Kontynuj" button on the start card depending on whether a save exists
+  function refreshContinue(){ const b=document.getElementById('btnContinue');
+    if(b) b.style.display = hasSave() ? '' : 'none'; }
 
   // ---- public actions (wired from index.html) ----
   return {
-    setScreen,
+    setScreen, refreshContinue,
     newGame(){ runGen(readSeed()); },
+    continueGame(){ if(loadGame()){ setScreen('game'); } else { refreshContinue(); } },   // load quick-save, drop straight in
     randomSeed(){ seedIn.value=String((Math.random()*1e9)>>>0); },
-    regenInGame(){ regen(); },                 // HUD "new map" — keep current camera
-    toStart(){ clearCity(); document.getElementById('chronicle').classList.remove('open'); setScreen('start'); },
+    regenInGame(){ regen(); saveGame(); },     // HUD "new map" — keep current camera, persist it
+    toStart(){ clearCity(); document.getElementById('chronicle').classList.remove('open'); refreshContinue(); setScreen('start'); },
     toGame(){ setScreen('game'); },
     toggleChronicle(){ const el=document.getElementById('chronicle'); renderChronicle(); el.classList.toggle('open'); },
     setLayer(k){ if(WORLD)WORLD.layer=k;                                  // switch the map overlay (Houses/guilds/faiths)
@@ -73,11 +79,13 @@ const UI=(()=>{
 // #city opens the busiest city's panel, #map shows a zoomed-out overview.
 (function boot(){
   const h=location.hash;
-  if(h==='#map'){ UI.toGame(); cam.x=W/2; cam.y=H/2; cam.zoom=1; clampCam(); return; }
-  if(h==='#game'){ UI.toGame(); return; }
-  if(h==='#city'){ UI.toGame();
+  // dev deep-links need a world on demand (there is no boot-time backdrop world anymore)
+  if(h==='#map'){ regen(); UI.toGame(); cam.x=W/2; cam.y=H/2; cam.zoom=1; clampCam(); return; }
+  if(h==='#game'){ regen(); UI.toGame(); return; }
+  if(h==='#city'){ regen(); UI.toGame();
     let bi=0; WORLD.cities.forEach((c,i)=>{if(c.pop>WORLD.cities[bi].pop)bi=i;});
     const c=WORLD.cities[bi]; selected=bi; cam.x=c.x; cam.y=c.y; cam.zoom=8; clampCam(); updateInfo();
     return; }
+  UI.refreshContinue();          // reveal "Kontynuj" only when a quick-save exists
   UI.setScreen('start');
 })();

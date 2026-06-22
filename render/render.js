@@ -56,10 +56,10 @@ function placeBuilding(wx,wy){ const x=Math.round(wx),y=Math.round(wy);
   const b=makeBuild(buildMode,x,y); c.builds.push(b);
   c.r=Math.max(c.r,Math.hypot(x-c.x,y-c.y)+1);
   flash(`zbudowano: ${b.name} (${c.name})`);
-  exitBuild(); selBuild={ci,b}; selected=ci; updateInfo();
+  exitBuild(); selBuild={ci,b}; selected=ci; updateInfo(); saveGame();
 }
 function demolishBuild(){ if(!selBuild)return; const c=WORLD.cities[selBuild.ci];
-  const i=c.builds.indexOf(selBuild.b); if(i>=0)c.builds.splice(i,1); selBuild=null; updateInfo(); }
+  const i=c.builds.indexOf(selBuild.b); if(i>=0)c.builds.splice(i,1); selBuild=null; updateInfo(); saveGame(); }
 
 // info panel for a single building
 function buildingInfo(){ const c=WORLD.cities[selBuild.ci], b=selBuild.b, p=PROD[b.id]||{};
@@ -168,6 +168,7 @@ function drawPorts(){ if(cam.zoom<1.5)return; const s=SPR.anchor,IC=Math.max(2,M
     const[sx,sy]=w2s(c.dock.x,c.dock.y);
     ctx.drawImage(s.img,0,0,s.sw,s.sh, Math.round(sx-s.sw*IC/2), Math.round(sy-s.sh*IC/2), s.sw*IC, s.sh*IC); } }
 function render(){
+  if(!WORLD){ ctx.fillStyle='#10140e'; ctx.fillRect(0,0,cv.width,cv.height); return; }   // no world yet (start screen)
   ctx.imageSmoothingEnabled=false;
   ctx.fillStyle=PAL.deep;ctx.fillRect(0,0,cv.width,cv.height);
   const[ox,oy]=w2s(0,0), DX=Math.round(ox),DY=Math.round(oy),DW=Math.ceil(W*cam.zoom),DH=Math.ceil(H*cam.zoom);
@@ -213,6 +214,7 @@ function render(){
 // ============================================================
 let last=performance.now();
 function tick(now){const dt=Math.min(0.05,(now-last)/1000);last=now;
+  if(!WORLD){ render(); requestAnimationFrame(tick); return; }   // idle on start screen until a world exists
   for(const m of WORLD.merchants){ if(!m.segs.length)continue;
     const s=m.segs[m.si]; m.t+=m.speed*dt*20/s.len;
     if(m.t>=1){ m.t=0; m.si++; if(m.si>=m.segs.length) WORLD.replan(m); }}
@@ -229,6 +231,32 @@ function regen(seed){WORLD=genWorld(typeof seed==='number'?seed:(Math.random()*1
   const sc=document.getElementById('scenario');if(sc)sc.textContent=WORLD.houses.length+' rodów · '+WORLD.cities.length+' miast';}
 // R = new map, but only while playing (start/gen screens own the keyboard otherwise).
 addEventListener('keydown',e=>{if((e.key==='r'||e.key==='R')&&document.body.dataset.screen==='game')regen();});
+
+// ---------- quick-save (localStorage) ----------
+// The world is deterministic from its seed, so we persist only the seed + the player's
+// mutations (per-city stockpiles & built buildings) + camera. Continue = regen(seed) then overlay.
+const SAVE_KEY='mapk.save.v1';
+function hasSave(){ try{ return !!localStorage.getItem(SAVE_KEY); }catch(e){ return false; } }
+function saveGame(){ if(!WORLD)return; try{
+  const data={ seed:WORLD.seed, layer:WORLD.layer||'rody',
+    cam:{x:cam.x,y:cam.y,zoom:cam.zoom},
+    cities:WORLD.cities.map(c=>({ stock:c.stock||{}, builds:(c.builds||[]).map(b=>({id:b.id,x:b.x,y:b.y})) })) };
+  localStorage.setItem(SAVE_KEY, JSON.stringify(data));
+}catch(e){} }
+function loadGame(){ try{
+  const data=JSON.parse(localStorage.getItem(SAVE_KEY)||'null'); if(!data)return false;
+  regen(data.seed);                                                   // rebuild the deterministic base world
+  (data.cities||[]).forEach((sc,i)=>{ const c=WORLD.cities[i]; if(!c)return;
+    c.stock=sc.stock||c.stock;
+    c.builds=(sc.builds||[]).map(b=>makeBuild(b.id,b.x,b.y));         // rehydrate (canvas sprite re-derived)
+    for(const b of c.builds) c.r=Math.max(c.r,Math.hypot(b.x-c.x,b.y-c.y)+1); });
+  WORLD.layer=data.layer||'rody';
+  document.querySelectorAll('.lyr').forEach(b=>b.classList.toggle('on',b.dataset.l===WORLD.layer));
+  if(data.cam){ cam.x=data.cam.x; cam.y=data.cam.y; cam.zoom=data.cam.zoom; clampCam(); }
+  selected=null; updateInfo();
+  if(typeof renderChronicle==='function') renderChronicle();
+  return true;
+}catch(e){ return false; } }
+
 buildSprites();
-regen(Math.random()*1e9|0);          // a world to sit behind the start screen as a live backdrop
-requestAnimationFrame(tick);          // render loop always runs; UI overlays sit on top
+requestAnimationFrame(tick);          // render loop runs idle until New Game / Continue builds a world
