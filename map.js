@@ -471,13 +471,38 @@ function genWorld(seed){
   for(const rl of relations) if(rl.rel==='wojna') events.push(`Wojna ${houses[rl.a].name} z ${houses[rl.b].name} — ${rl.cause}.`);
   if(events.length>10) events.length=10;
 
-  // ---- territory: each LAND tile owned by nearest city -> its faction ----
-  const fac=new Int8Array(N).fill(-1);
+  // ---- overlapping layers: economic guilds + religious faiths that cross-cut the Houses ----
+  // a town belongs to a House (blood/land) AND a guild (its trade) AND a faith — the three maps
+  // of allegiance rarely line up, which is where the leverage and intrigue live.
+  const GUILD_NAME={'sól':'Bractwo Soli','ruda':'Gildia Górnicza','port':'Liga Morska','drewno':'Cech Drwali',
+    'kamień':'Gildia Kamieniarzy','zboże':'Bractwo Młynarzy','rolnictwo':'Liga Wiejska'};
+  const GUILD_COL=['#d8a030','#3aa0c0','#9c5ad0','#5fbf6f','#d05a7a','#7a8a3a','#c06030'];
+  const byRole={}; cities.forEach((c,i)=>{ (byRole[c.role]=byRole[c.role]||[]).push(i); c.guild=-1; });
+  const guilds=[];
+  for(const role of Object.keys(byRole)){ const mem=byRole[role]; if(mem.length<2)continue;
+    const id=guilds.length, seat=mem.slice().sort((a,b)=>cities[b].pop-cities[a].pop)[0];
+    for(const m of mem) cities[m].guild=id;
+    guilds.push({id, role, name:GUILD_NAME[role]||('Gildia '+role), color:GUILD_COL[id%GUILD_COL.length],
+      master:person(), seat:cities[seat].name, towns:mem.length}); }
+  const guildRel=[]; for(let i=0;i<guilds.length;i++)for(let j=i+1;j<guilds.length;j++) if(rng()<0.3) guildRel.push({a:i,b:j});
+
+  const FAITH_NAME=['Kult Słońca','Wiara Głębin','Stary Las','Zakon Popiołu','Droga Kamienia'];
+  const FAITH_COL=['#e6c84e','#5a8ac0','#6fae5a','#b06ab0'];
+  const nFaith=2+(rng()<0.5?1:0);
+  const fOrder=FAITH_NAME.map((_,i)=>i).sort(()=>rng()-0.5).slice(0,nFaith);
+  const faiths=fOrder.map((fi,i)=>({id:i, name:FAITH_NAME[fi], color:FAITH_COL[i], priest:person(), holyCity:'—', towns:0}));
+  const houseFaith=new Map(houses.map(h=>[h.f, rng()*nFaith|0]));         // each House patronises a faith
+  for(const c of cities){ c.faith = rng()<0.82 ? (houseFaith.get(c.f)??0) : (rng()*nFaith|0); faiths[c.faith].towns++; }
+  for(const ft of faiths){ let best=-1,bp=-1; cities.forEach((c,i)=>{ if(c.faith===ft.id&&c.pop>bp){bp=c.pop;best=i;} }); if(best>=0)ft.holyCity=cities[best].name; }
+  const faithTension = nFaith>=2 ? {a:0,b:1} : null;                       // two creeds at odds
+
+  // ---- territory: each LAND tile owned by nearest city -> its House / guild / faith ----
+  const fac=new Int8Array(N).fill(-1), facG=new Int8Array(N).fill(-1), facFa=new Int8Array(N).fill(-1);
   for(let y=0;y<H;y++)for(let x=0;x<W;x++){
     const i=y*W+x; if(!isLand(i))continue;
-    let bf=0,bd=1e15;
-    for(const c of cities){const dx=c.x-x,dy=c.y-y,dd=dx*dx+dy*dy; if(dd<bd){bd=dd;bf=c.f;}}
-    fac[i]=bf;
+    let nc=0,bd=1e15;
+    for(let k=0;k<cities.length;k++){const c=cities[k],dx=c.x-x,dy=c.y-y,dd=dx*dx+dy*dy; if(dd<bd){bd=dd;nc=k;}}
+    const c=cities[nc]; fac[i]=c.f; facG[i]=c.guild; facFa[i]=c.faith;
   }
 
   // ---- road adjacency + bridge decks + per-edge polyline lookup (roads may bend at nodes) ----
@@ -549,8 +574,12 @@ function genWorld(seed){
     const dest=reach[rng()*reach.length|0],route=planRoute(home,dest);if(!route||!route.length)continue;
     merchants.push({home,dest,f:rng()<0.5?cities[home].f:-1,segs:segmentsFor(route),si:0,t:rng(),speed:0.10+rng()*0.10});}
 
+  const layers={ rody:bakeLayer(biome,fac,FACTIONS.map(f=>f.tint),FACTIONS.map(f=>f.border)),
+    gildie:bakeLayer(biome,facG,guilds.map(g=>hexRGB(g.color)),guilds.map(g=>g.color)),
+    wiary:bakeLayer(biome,facFa,faiths.map(f=>hexRGB(f.color)),faiths.map(f=>f.color)) };
   const world={seed,W,H,height,moist,biome,cost,fac,cities,edges,adj,cadj,merchants,trees,bushes,peaks,hills,rocks,fields,bridges,roadPaths,
-    houses,relations,ties,legends,intrigues,events,bitmap:bakeTerrain(height,moist,biome,fac)};
+    houses,relations,ties,legends,intrigues,events,guilds,guildRel,faiths,faithTension,
+    base:bakeBase(height,moist,biome),layers,layer:'rody'};
   // runtime route replanning (called when a caravan reaches its destination)
   world.replan=m=>{const home=m.dest,reach=reachableFrom(home);
     if(!reach.length){m.si=0;m.t=0;return;}
@@ -567,15 +596,15 @@ function genWorld(seed){
   return world;
 }
 
-// bake terrain + coastline + faction tint + borders into one low-res canvas
-function bakeTerrain(height,moist,biome,fac){
+const hexRGB=h=>[parseInt(h.slice(1,3),16),parseInt(h.slice(3,5),16),parseInt(h.slice(5,7),16)];
+// base terrain + coastline (no allegiance tint — that lives in switchable overlay layers)
+function bakeBase(height,moist,biome){
   const c=document.createElement('canvas');c.width=W;c.height=H;const x=c.getContext('2d');
   const img=x.createImageData(W,H),D=img.data;
-  const hex=h=>[parseInt(h.slice(1,3),16),parseInt(h.slice(3,5),16),parseInt(h.slice(5,7),16)];
-  const C={deep:hex(PAL.deep),shallow:hex(PAL.shallow),foam:hex(PAL.foam),
-    beach:hex(PAL.beach),beachDk:hex(PAL.beachDk),desert:hex(PAL.desert),desertDk:hex(PAL.desertDk),
-    grass:PAL.grass.map(hex),grassDk:hex(PAL.grassDk),forest:hex(PAL.forest),forestDk:hex(PAL.forestDk),
-    hill:hex(PAL.hill),hillDk:hex(PAL.hillDk),rock:hex(PAL.rock),rockDk:hex(PAL.rockDk),snow:hex(PAL.snow)};
+  const C={deep:hexRGB(PAL.deep),shallow:hexRGB(PAL.shallow),foam:hexRGB(PAL.foam),
+    beach:hexRGB(PAL.beach),beachDk:hexRGB(PAL.beachDk),desert:hexRGB(PAL.desert),desertDk:hexRGB(PAL.desertDk),
+    grass:PAL.grass.map(hexRGB),grassDk:hexRGB(PAL.grassDk),forest:hexRGB(PAL.forest),forestDk:hexRGB(PAL.forestDk),
+    hill:hexRGB(PAL.hill),hillDk:hexRGB(PAL.hillDk),rock:hexRGB(PAL.rock),rockDk:hexRGB(PAL.rockDk),snow:hexRGB(PAL.snow)};
   const set=(i,col)=>{const j=i*4;D[j]=col[0];D[j+1]=col[1];D[j+2]=col[2];D[j+3]=255;};
   const land=i=>biome[i]>=BIOME.BEACH, water=i=>biome[i]<=BIOME.SHALLOW;
   for(let y=0;y<H;y++)for(let xx=0;xx<W;xx++){
@@ -591,24 +620,25 @@ function bakeTerrain(height,moist,biome,fac){
       case BIOME.HILLS: col=dith?C.hill:C.hillDk; break;
       case BIOME.MOUNTAIN: col=height[i]>0.92?C.snow:(dith?C.rock:C.rockDk); break;
     }
-    // faction tint on land
-    if(fac[i]>=0){const t=FACTIONS[fac[i]].tint; col=[(col[0]*0.84+t[0]*0.16)|0,(col[1]*0.84+t[1]*0.16)|0,(col[2]*0.84+t[2]*0.16)|0];}
     set(i,col);
   }
-  // coastline pass: foam on shallow next to land
   const px4=(i,col)=>{const j=i*4;D[j]=col[0];D[j+1]=col[1];D[j+2]=col[2];};
-  for(let y=1;y<H-1;y++)for(let xx=1;xx<W-1;xx++){
-    const i=y*W+xx;
-    if(biome[i]===BIOME.SHALLOW){
-      if(land(i-1)||land(i+1)||land(i-W)||land(i+W)) px4(i,C.foam);
-    } else if(land(i)){
-      // shoreline: land tile touching water -> darker sand edge
-      if(water(i-1)||water(i+1)||water(i-W)||water(i+W)) px4(i,C.beachDk);
-      // faction border: land neighbor of different faction
-      else { const r=fac[i+1],d=fac[i+W];
-        if((r>=0&&r!==fac[i])||(d>=0&&d!==fac[i])) px4(i,hex(FACTIONS[fac[i]].border)); }
-    }
-  }
+  for(let y=1;y<H-1;y++)for(let xx=1;xx<W-1;xx++){ const i=y*W+xx;
+    if(biome[i]===BIOME.SHALLOW){ if(land(i-1)||land(i+1)||land(i-W)||land(i+W)) px4(i,C.foam); }
+    else if(land(i) && (water(i-1)||water(i+1)||water(i-W)||water(i+W))) px4(i,C.beachDk); }   // shoreline
+  x.putImageData(img,0,0); return c;
+}
+// one allegiance overlay: translucent tint per group on land + opaque borders between groups.
+// assign[i] = group id (-1 none); tintRGB[id] / borderHex[id] colour each group.
+function bakeLayer(biome,assign,tintRGB,borderHex){
+  const c=document.createElement('canvas');c.width=W;c.height=H;const x=c.getContext('2d');
+  const img=x.createImageData(W,H),D=img.data, bord=borderHex.map(h=>h?hexRGB(h):null), TA=70;
+  const land=i=>biome[i]>=BIOME.BEACH;
+  for(let i=0;i<W*H;i++){ const g=assign[i]; if(g<0||!land(i))continue; const t=tintRGB[g]; if(!t)continue;
+    const j=i*4; D[j]=t[0];D[j+1]=t[1];D[j+2]=t[2];D[j+3]=TA; }
+  for(let y=1;y<H-1;y++)for(let xx=1;xx<W-1;xx++){ const i=y*W+xx, g=assign[i]; if(g<0||!land(i))continue;
+    const r=assign[i+1],d=assign[i+W];
+    if((r>=0&&r!==g)||(d>=0&&d!==g)){ const b=bord[g]; if(b){const j=i*4;D[j]=b[0];D[j+1]=b[1];D[j+2]=b[2];D[j+3]=215;} } }
   x.putImageData(img,0,0); return c;
 }
 
@@ -641,6 +671,7 @@ function updateInfo(){
   if(selected==null||!WORLD){info.classList.remove('open');document.body.classList.remove('has-info');return;}
   const c=WORLD.cities[selected],f=FACTIONS[c.f];
   const house=WORLD.houses.find(h=>h.f===c.f);
+  const guild=c.guild>=0?WORLD.guilds[c.guild]:null, faith=WORLD.faiths[c.faith];
   const comp={}; for(const h of c.houses) comp[h.btype]=(comp[h.btype]||0)+1;
   const resRows=['manor','townhouse','house','shack'].filter(k=>comp[k])
     .map(k=>`<div class="li"><span>${RES_NAME[k]}</span><span>${comp[k]}</span></div>`).join('');
@@ -655,6 +686,8 @@ function updateInfo(){
    + (house?`<div class="stat"><span>włada</span><b>${house.title} ${house.ruler.full}</b></div>`:'')
    + `<div class="stat"><span>populacja</span><b>${c.pop.toLocaleString('pl')}</b></div>`
    + `<div class="stat"><span>gospodarka</span><b>${c.role||'—'}</b></div>`
+   + `<div class="stat"><span>gildia</span><b style="color:${guild?guild.color:'inherit'}">${guild?guild.name:'—'}</b></div>`
+   + `<div class="stat"><span>wiara</span><b style="color:${faith?faith.color:'inherit'}">${faith?faith.name:'—'}</b></div>`
    + `<div class="stat"><span>biom</span><b>${BIOME_NAME[WORLD.biomeAt(c.x,c.y)]}</b></div>`
    + `<div class="stat"><span>drogi</span><b>${WORLD.adj[selected].length}</b></div>`
    + `<div class="sect">mieszkalne (${c.houses.length})</div><div class="list">${resRows}</div>`
@@ -712,8 +745,9 @@ function drawLabels(){if(cam.zoom<3)return;ctx.font=`bold ${Math.max(9,cam.zoom*
 function render(){
   ctx.imageSmoothingEnabled=false;
   ctx.fillStyle=PAL.deep;ctx.fillRect(0,0,cv.width,cv.height);
-  const[ox,oy]=w2s(0,0);
-  ctx.drawImage(WORLD.bitmap,0,0,W,H,Math.round(ox),Math.round(oy),Math.ceil(W*cam.zoom),Math.ceil(H*cam.zoom));
+  const[ox,oy]=w2s(0,0), DX=Math.round(ox),DY=Math.round(oy),DW=Math.ceil(W*cam.zoom),DH=Math.ceil(H*cam.zoom);
+  ctx.drawImage(WORLD.base,0,0,W,H,DX,DY,DW,DH);                              // terrain
+  ctx.drawImage(WORLD.layers[WORLD.layer],0,0,W,H,DX,DY,DW,DH);              // allegiance overlay (Houses/guilds/faiths)
   const vb=viewBounds();
   for(const f of WORLD.fields) if(f.x>=vb.x0&&f.x<=vb.x1&&f.y>=vb.y0&&f.y<=vb.y1) blit(f.spr,f.x,f.y,false); // flat ground, no shadow
   drawBridges();   // wooden decks under the road dashes
@@ -763,6 +797,7 @@ function tick(now){const dt=Math.min(0.05,(now-last)/1000);last=now;
 function regen(seed){WORLD=genWorld(typeof seed==='number'?seed:(Math.random()*1e9|0));clampCam();
   selected=null;updateInfo();
   if(typeof renderChronicle==='function') renderChronicle();
+  document.querySelectorAll('.lyr').forEach(b=>b.classList.toggle('on',b.dataset.l==='rody'));   // reset layer switch
   const el=document.getElementById('seed');if(el)el.textContent=WORLD.seed;
   const sc=document.getElementById('scenario');if(sc)sc.textContent=WORLD.houses.length+' rodów · '+WORLD.cities.length+' miast';}
 // R = new map, but only while playing (start/gen screens own the keyboard otherwise).

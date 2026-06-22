@@ -57,6 +57,8 @@ const UI=(()=>{
     toStart(){ clearCity(); document.getElementById('chronicle').classList.remove('open'); setScreen('start'); },
     toGame(){ setScreen('game'); },
     toggleChronicle(){ const el=document.getElementById('chronicle'); renderChronicle(); el.classList.toggle('open'); },
+    setLayer(k){ if(WORLD)WORLD.layer=k;                                  // switch the map overlay (Houses/guilds/faiths)
+      document.querySelectorAll('.lyr').forEach(b=>b.classList.toggle('on',b.dataset.l===k)); },
   };
 })();
 
@@ -90,10 +92,20 @@ function houseGraph(H,R,I){
 function renderChronicle(){
   const el=document.getElementById('chronicle'); if(!el||!WORLD||!WORLD.houses)return;
   const H=WORLD.houses, R=WORLD.relations||[], E=WORLD.events||[], L=WORLD.legends||[], I=WORLD.intrigues||[];
+  const G=WORLD.guilds||[], FA=WORLD.faiths||[];
   const tab=(id,lbl)=>`<span class="tab${chronTab===id?' on':''}" onclick="setChronTab('${id}')">${lbl}</span>`;
   let h=`<div class="ihead"><span class="nm">KRONIKI</span><span class="x" onclick="UI.toggleChronicle()">✕</span></div>`
-   +`<div class="tabs">${tab('rody','Rody')}${tab('wiezy','Powiązania')}</div><div class="ibody">`;
-  if(chronTab==='rody'){
+   +`<div class="tabs">${tab('rody','Rody')}${tab('wiezy','Powiązania')}${tab('warstwy','Warstwy')}</div><div class="ibody">`;
+  if(chronTab==='warstwy'){
+    h+=`<div class="sect">gildie (${G.length})</div>`;
+    for(const g of G) h+=`<div class="hrow"><span class="sw" style="background:${g.color}"></span> <b>${g.name}</b>`
+      +`<br><span class="dim">mistrz ${g.master.full} · siedziba ${g.seat} · ${g.towns} miast · handel: ${g.role}</span></div>`;
+    if(!G.length) h+=`<div class="ev">brak gildii (zbyt rozproszony handel)</div>`;
+    h+=`<div class="sect">wiary (${FA.length})</div>`;
+    for(const f of FA) h+=`<div class="hrow"><span class="sw" style="background:${f.color}"></span> <b>${f.name}</b>`
+      +`<br><span class="dim">arcykapłan ${f.priest.full} · święte miasto ${f.holyCity} · ${f.towns} miast</span></div>`;
+    if(WORLD.faithTension) h+=`<div class="ev intrig">Napięcie religijne: ${FA[WORLD.faithTension.a].name} kontra ${FA[WORLD.faithTension.b].name}.</div>`;
+  } else if(chronTab==='rody'){
     h+=`<div class="sect">rody (${H.length})</div>`;
     for(const o of H) h+=`<div class="hrow"><span class="sw" style="background:${o.color}"></span> <b>Ród ${o.name}</b> — ${o.seat}`
       +`<br><span class="dim">${o.title} ${o.ruler.full} (${o.ruler.age}) · dziedzic: ${o.heir.full}</span>`
