@@ -37,8 +37,8 @@ const FACTIONS=[
 const BLD={
   farm:{name:'Farma'}, lumber_camp:{name:'Obóz drwali'}, mine:{name:'Kopalnia'},
   quarry:{name:'Kamieniołom'}, fishery:{name:'Przystań'}, salt_works:{name:'Warzelnia'},
-  mill:{name:'Młyn'}, sawmill:{name:'Tartak'}, smelter:{name:'Huta'},
+  mill:{name:'Młyn'}, piekarnia:{name:'Piekarnia'}, sawmill:{name:'Tartak'}, smelter:{name:'Huta'},
   warehouse:{name:'Magazyn'}, market:{name:'Targ'}, harbor:{name:'Port'},
   chapel:{name:'Kaplica'}, tower:{name:'Wieża'},
 };
-const ECON_SPR={mill:'windmill', market:'market', chapel:'chapel', tower:'tower'}; // id -> distinctive sprite (else workshop)
+const ECON_SPR={mill:'windmill', piekarnia:'market', market:'market', chapel:'chapel', tower:'tower'}; // id -> distinctive sprite (else workshop)

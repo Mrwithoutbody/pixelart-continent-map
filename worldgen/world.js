@@ -252,7 +252,8 @@ function genWorld(seed){
     const all=c.houses.concat(c.builds);
     c.r=all.reduce((m,h)=>Math.max(m,Math.hypot(h.x-c.x,h.y-c.y)),1.5);
     c.minY=all.reduce((m,h)=>Math.min(m,h.y),c.y);
-    c.stock={ drewno:Math.round(18+c.pop/14), 'kamień':Math.round(8+c.pop/30), 'złoto':Math.round(12+c.pop/18) };  // starting funds to build with
+    c.stock={ drewno:Math.round(18+c.pop/14), 'kamień':Math.round(8+c.pop/30), 'złoto':Math.round(12+c.pop/18),
+              'sól':60, 'jedzenie':40 };  // starting funds to build + a food/salt buffer until trade routes warm up
   }
 
   const {houses,relations,ties,legends,intrigues,events,guilds,guildRel,faiths,faithTension}=buildChronicle(cities,rng);
@@ -333,25 +334,29 @@ function genWorld(seed){
   // Load the home's biggest surplus, then route to the town that most NEEDS it (consumes it as a
   // refiner input / is low on it / has free storage). Ore reaches smelters, timber/stone reach
   // builders, food reaches markets. cityCap/cityUsed/PROD are runtime globals (loaded after this).
-  const CARGO_CAP=12;
+  const CARGO_CAP=20;
   const loadCargo=ci=>{ const c=cities[ci],st=c.stock||{}; let best=null,bv=4;     // need >4 spare to bother hauling
-    for(const r in st){ const reserve=FOOD[r]?cityNeed(c)*8:0;                      // keep ~8 ticks of food at home
+    for(const r in st){ const reserve=(r===FOOD)?cityNeed(c)*8:0;                   // keep ~8 ticks of food at home
       const avail=(st[r]||0)-reserve; if(avail>bv){bv=avail;best=r;} }
     if(!best)return null; const qty=Math.min(CARGO_CAP,Math.floor(bv*0.5));         // ship half the genuine surplus
     if(qty<=0)return null; st[best]-=qty; return {res:best,qty}; };
   const unloadCargo=(ci,cargo)=>{ if(!cargo)return; const c=cities[ci],st=c.stock||(c.stock={});
     const free=Math.max(0,cityCap(c)-cityUsed(c)), drop=Math.min(cargo.qty,free);  // no room -> rest spoils on the dock
     if(drop>0)st[cargo.res]=(st[cargo.res]||0)+drop; };
-  const consumes=(ci,res)=>cities[ci].builds.some(b=>{const p=PROD[b.id];return p&&p.in&&p.in[0]===res;});
+  const consumes=(ci,res)=>cities[ci].builds.some(b=>!b.ruined&&recipesOf(b.id).some(r=>r.in.some(x=>x[0]===res)));
+  // price of a good at a town: scarce + in demand (consumed here / it's food / salt) = dear
+  const priceAt=(ci,res)=>{ const have=(cities[ci].stock||{})[res]||0; let dem=1;
+    if(consumes(ci,res))dem+=3; if(res===FOOD)dem+=2; if(res==='sól')dem+=1;
+    return dem/(1+have*0.1); };
   const destFor=(reach,cargo,rand)=>{ if(!cargo) return reach[(rand()*reach.length)|0];   // empty caravan -> wander
     let best=reach[0],bs=-1e9;
-    for(const d of reach){ const free=Math.max(0,cityCap(cities[d])-cityUsed(cities[d]));
-      const have=(cities[d].stock||{})[cargo.res]||0;
-      const score=(consumes(d,cargo.res)?1000:0)+free*2-have+rand()*4;   // prefer a consumer with room & little stock
+    for(const d of reach){ if(cityCap(cities[d])-cityUsed(cities[d])<=0)continue;          // no room there
+      const score=priceAt(d,cargo.res)+rand()*0.3;                                         // sell where it is dearest
       if(score>bs){bs=score;best=d;} }
     return best; };
   const merchants=[];
-  for(let m=0;m<18;m++){const home=rng()*cities.length|0,reach=reachableFrom(home);if(!reach.length)continue;
+  const FLEET=Math.min(90,Math.max(18,Math.round(cities.length*2.2)));   // scale caravans with the world
+  for(let m=0;m<FLEET;m++){const home=rng()*cities.length|0,reach=reachableFrom(home);if(!reach.length)continue;
     const cargo=loadCargo(home),dest=destFor(reach,cargo,rng),route=planRoute(home,dest);if(!route||!route.length)continue;
     merchants.push({home,dest,f:rng()<0.5?cities[home].f:-1,cargo,segs:segmentsFor(route),si:0,t:rng(),speed:0.10+rng()*0.10});}
 

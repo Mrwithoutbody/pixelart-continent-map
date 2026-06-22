@@ -28,11 +28,12 @@ function cityEconomy(c,biome){
     else if(b===BIOME.MOUNTAIN)cnt.M++; else if(b===BIOME.HILLS)cnt.H++;
     else if(b<=BIOME.SHALLOW)cnt.W++; else if(b===BIOME.DESERT)cnt.D++; }
   const out=[],TH=14;
-  if(cnt.G>TH)out.push('farm','mill');
+  if(cnt.G>TH)out.push('farm','piekarnia');           // grain town bakes (grain+salt)
+  else if(cnt.W>4)out.push('fishery','piekarnia');    // else a coastal town bakes (fish+salt)
+  if(cnt.G>TH&&cnt.W>4)out.push('fishery');           // grain town that also has a coast still fishes
   if(cnt.F>TH)out.push('lumber_camp','sawmill');
   if(cnt.M>TH)out.push('mine','smelter');
   if(cnt.H>TH)out.push('quarry');
-  if(cnt.W>4)out.push('fishery');
   if(cnt.D>TH)out.push('salt_works');
   out.push('warehouse'); if(c.pop>600)out.push('market'); if(cnt.W>6)out.push('harbor');
   const cap=Math.max(2,Math.min(out.length,2+Math.round(c.pop/220)));   // bigger town = more

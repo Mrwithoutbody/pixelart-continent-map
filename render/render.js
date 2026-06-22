@@ -121,13 +121,18 @@ function buildingDetail(c,b){ const p=PROD[b.id]||{};
    + `<button class="btn sm ghost" style="margin-top:6px;width:100%" onclick="demolishBuild()">✕ Rozbierz</button>`;
   return head
    + `<div class="stat"><span>magazyn</span><b>+${buildStore(b.id)} miejsca</b></div>`
-   + (p.in?`<div class="stat"><span>zużywa</span><b>−${p.in[1]} ${p.in[0]}/turę</b></div>`:'')
-   + `<div class="stat"><span>produkuje</span><b>${p.out?`+${p.out[1]} ${p.out[0]}/turę`:'—'}</b></div>`
-   + (p.in?`<div class="stat"><span>w magazynie</span><b>${Math.floor((c.stock||{})[p.in[0]]||0)} ${p.in[0]}</b></div>`:'')
+   + recipeRows(b.id,c)
    + `<div class="stat"><span>biom</span><b>${BIOME_NAME[WORLD.biomeAt(b.x,b.y)]}</b></div>`
    + `<div class="sect">akcje</div><div class="li eco"><span>zadania — wkrótce</span><span></span></div>`
    + `<button class="btn sm ghost" style="margin-top:10px;width:100%" onclick="demolishBuild()">✕ Rozbierz</button>`;
 }
+// recipe(s) of a building as "inputs → output/turę" rows, plus current input stock
+function recipeRows(id,c){ const recs=recipesOf(id); if(!recs.length)return '';
+  const ins=new Set(); recs.forEach(r=>r.in.forEach(x=>ins.add(x[0])));
+  let h=recs.map(r=>{ const lhs=r.in.length?r.in.map(x=>`${x[1]} ${x[0]}`).join(' + '):'produkuje';
+    return `<div class="stat"><span>${lhs}</span><b>→ ${r.out[1]} ${r.out[0]}/turę</b></div>`; }).join('');
+  for(const r of ins) h+=`<div class="li eco"><span>${r} w magazynie</span><span>${Math.floor((c.stock||{})[r]||0)}</span></div>`;
+  return h; }
 // rebuild a ruined building, paying its build cost again from the town stock
 function rebuildBuild(){ if(!selBuild)return; const c=WORLD.cities[selBuild.ci],b=selBuild.b; if(!b.ruined)return;
   if(!canAfford(c,b.id)) return flash(`brak: ${missingFor(c,b.id).join(', ')}`);
