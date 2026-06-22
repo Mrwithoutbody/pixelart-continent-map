@@ -12,7 +12,7 @@ const ECON={
   popShrink:0.003,       // pop loss/tick when starving — need falls with pop -> negative feedback, no death spiral
   popFloor:25,
   ruinLimit:200,         // ticks of sustained famine before a building is abandoned (long + recoverable)
-  cargoCap:24, tradeVal:6, foodReserve:10,  // caravan: load size, gold/price scale, ticks of food kept home
+  cargoCap:100, tradeVal:6, foodReserve:10,  // caravan: load size (Colonization 100-unit), gold/price scale, food kept home
   buildEvery:40, buildReserve:50,           // autonomous town growth: try a build every N ticks if treasury > reserve
   caravanEvery:60, caravanGold:140, fleetPerTown:3,   // a rich market town spawns a caravan; fleet capped at fleetPerTown*towns
 };

@@ -349,8 +349,11 @@ function genWorld(seed){
     for(const r in tally){ const reserve=(r===FOOD)?cityNeed(c)*ECON.foodReserve:0; const avail=tally[r]-reserve; if(avail>bv){bv=avail;best=r;} }
     if(!best)return null; const qty=Math.min(ECON.cargoCap,Math.floor(bv*0.5));
     if(qty<=0)return null; townTake(c,best,qty); return {res:best,qty,from:ci}; };
+  // load a SPECIFIC good (for player transport orders) — up to cargoCap of what the town has
+  const loadSpecific=(ci,res)=>{ const qty=Math.min(ECON.cargoCap,townHas(cities[ci],res));
+    if(qty>0)townTake(cities[ci],res,qty); return {res,qty,from:ci}; };
   // sell at the destination: it pays gold (only as much as it can afford & store); the producer earns it
-  const unloadCargo=(ci,cargo)=>{ if(!cargo)return; const c=cities[ci];
+  const unloadCargo=(ci,cargo)=>{ if(!cargo||ci==null||!cities[ci])return; const c=cities[ci];
     const free=Math.max(0,cityCap(c)-cityUsed(c)); if(free<=0)return;
     const val=valueAt(ci,cargo.res), gold=c.gold||0, afford=val>0?Math.floor(gold/val):0;
     const qty=Math.min(cargo.qty,free,afford); if(qty<=0)return;
@@ -377,11 +380,21 @@ function genWorld(seed){
     base:bakeBase(height,moist,biome),layers,layer:'rody'};
   // runtime route replanning (called when a caravan reaches its destination)
   world.replan=m=>{ unloadCargo(m.dest,m.cargo);                          // arrived -> drop the haul
+    // player transport order: shuttle a chosen good src -> dst, empty return (Colonization wagon train)
+    if(m.order){ const o=m.order;
+      const atSrc=(m.dest===o.src), next=atSrc?o.dst:o.src, route=planRoute(m.dest,next);
+      if(route){ m.home=m.dest; m.dest=next; m.cargo=atSrc?loadSpecific(o.src,o.res):null;
+        m.segs=segmentsFor(route); m.si=0; m.t=0; return; }
+      m.order=null; }                                                     // unroutable -> drop order, go auto
     const home=m.dest,reach=reachableFrom(home);
     if(!reach.length){m.cargo=null;m.si=0;m.t=0;return;}
     const cargo=loadCargo(home),dest=destFor(reach,cargo,Math.random),route=planRoute(home,dest);   // load, then route to need
     if(!route){m.cargo=null;m.si=0;m.t=0;return;}
     m.home=home;m.dest=dest;m.cargo=cargo;m.segs=segmentsFor(route);m.si=0;m.t=0;};
+  // start a player transport order now: route the caravan to the order's source town (from its last town)
+  world.applyOrder=m=>{ const o=m.order; if(!o)return; const route=planRoute(m.home,o.src);
+    if(route){ m.cargo=null; m.dest=o.src; m.segs=segmentsFor(route); m.si=0; m.t=0; }
+    else { m.order=null; } };
   // spawn a fresh caravan from a (prosperous) town — called by the economy tick when a market town is rich
   world.spawnMerchant=home=>{ const reach=reachableFrom(home); if(!reach.length)return false;
     const cargo=loadCargo(home),dest=destFor(reach,cargo,Math.random),route=planRoute(home,dest);
