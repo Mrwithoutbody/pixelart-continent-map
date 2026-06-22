@@ -334,24 +334,30 @@ function genWorld(seed){
   // Load the home's biggest surplus, then route to the town that most NEEDS it (consumes it as a
   // refiner input / is low on it / has free storage). Ore reaches smelters, timber/stone reach
   // builders, food reaches markets. cityCap/cityUsed/PROD are runtime globals (loaded after this).
-  const CARGO_CAP=20;
-  const loadCargo=ci=>{ const c=cities[ci],st=c.stock||{}; let best=null,bv=4;     // need >4 spare to bother hauling
-    for(const r in st){ const reserve=(r===FOOD)?cityNeed(c)*8:0;                   // keep ~8 ticks of food at home
-      const avail=(st[r]||0)-reserve; if(avail>bv){bv=avail;best=r;} }
-    if(!best)return null; const qty=Math.min(CARGO_CAP,Math.floor(bv*0.5));         // ship half the genuine surplus
-    if(qty<=0)return null; st[best]-=qty; return {res:best,qty}; };
-  const unloadCargo=(ci,cargo)=>{ if(!cargo)return; const c=cities[ci],st=c.stock||(c.stock={});
-    const free=Math.max(0,cityCap(c)-cityUsed(c)), drop=Math.min(cargo.qty,free);  // no room -> rest spoils on the dock
-    if(drop>0)st[cargo.res]=(st[cargo.res]||0)+drop; };
+  const CARGO_CAP=20, VAL=6;
+  // a good's gold value at a town: scarce + in demand (consumed here / food / salt) = dear
   const consumes=(ci,res)=>cities[ci].builds.some(b=>!b.ruined&&recipesOf(b.id).some(r=>r.in.some(x=>x[0]===res)));
-  // price of a good at a town: scarce + in demand (consumed here / it's food / salt) = dear
   const priceAt=(ci,res)=>{ const have=(cities[ci].stock||{})[res]||0; let dem=1;
     if(consumes(ci,res))dem+=3; if(res===FOOD)dem+=2; if(res==='sól')dem+=1;
-    return dem/(1+have*0.1); };
+    return dem/(1+have*0.1); };                                  // demand per scarcity
+  const valueAt=(ci,res)=>priceAt(ci,res)*VAL;                   // gold per unit
+  // buy the home's biggest surplus on consignment (goods leave now, paid when sold)
+  const loadCargo=ci=>{ const c=cities[ci],st=c.stock||{}; let best=null,bv=4;
+    for(const r in st){ if(r==='złoto')continue; const reserve=(r===FOOD)?cityNeed(c)*8:0;
+      const avail=(st[r]||0)-reserve; if(avail>bv){bv=avail;best=r;} }
+    if(!best)return null; const qty=Math.min(CARGO_CAP,Math.floor(bv*0.5));
+    if(qty<=0)return null; st[best]-=qty; return {res:best,qty,from:ci}; };
+  // sell at the destination: it pays gold (only as much as it can afford & store); the seller earns it
+  const unloadCargo=(ci,cargo)=>{ if(!cargo)return; const c=cities[ci],st=c.stock||(c.stock={});
+    const free=Math.max(0,cityCap(c)-cityUsed(c)), val=valueAt(ci,cargo.res), gold=st['złoto']||0;
+    const afford=val>0?Math.floor(gold/val):cargo.qty;
+    const qty=Math.min(cargo.qty,free,afford); if(qty<=0)return;
+    st[cargo.res]=(st[cargo.res]||0)+qty; st['złoto']=gold-qty*val;                  // buyer pays
+    if(cargo.from!=null){ const sc=cities[cargo.from]; sc.stock['złoto']=(sc.stock['złoto']||0)+qty*val; } };  // producer earns
   const destFor=(reach,cargo,rand)=>{ if(!cargo) return reach[(rand()*reach.length)|0];   // empty caravan -> wander
     let best=reach[0],bs=-1e9;
     for(const d of reach){ if(cityCap(cities[d])-cityUsed(cities[d])<=0)continue;          // no room there
-      const score=priceAt(d,cargo.res)+rand()*0.3;                                         // sell where it is dearest
+      const score=valueAt(d,cargo.res)+rand()*1.5;                                         // sell where it pays most
       if(score>bs){bs=score;best=d;} }
     return best; };
   const merchants=[];

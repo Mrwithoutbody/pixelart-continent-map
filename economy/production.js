@@ -55,7 +55,8 @@ function cityCap(c){ let cap=0;
   for(const b of (c.builds||[])) if(!b.ruined) cap+=buildStore(b.id);
   for(const h of (c.houses||[])) cap+=buildStore(h.btype);
   return cap; }
-function cityUsed(c){ let s=0; const st=c.stock||{}; for(const r in st) if(st[r]>0) s+=st[r]; return s; }
+// gold is money, not a stored good -> it doesn't take warehouse space
+function cityUsed(c){ let s=0; const st=c.stock||{}; for(const r in st) if(r!=='złoto'&&st[r]>0) s+=st[r]; return s; }
 
 // ---- people & food: towns eat ONLY 'jedzenie' (baked from grain/fish + salt) ----
 const FOOD='jedzenie';

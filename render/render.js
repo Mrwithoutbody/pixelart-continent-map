@@ -90,6 +90,7 @@ function cityTab(c){ const f=FACTIONS[c.f];
    +   (c.seat?` <span class="port">★ stolica</span>`:'')+(c.port?` <span class="port">⚓ port</span>`:'')+`</div>`
    + (house?`<div class="stat"><span>włada</span><b>${house.title} ${house.ruler.full}</b></div>`:'')
    + `<div class="stat"><span>populacja</span><b>${c.pop.toLocaleString('pl')}</b></div>`
+   + `<div class="stat"><span>skarb</span><b>${Math.floor((c.stock||{})['złoto']||0)} złota</b></div>`
    + foodStat(c)
    + `<div class="stat"><span>gospodarka</span><b>${c.role||'—'}</b></div>`
    + `<div class="stat"><span>gildia</span><b style="color:${guild?guild.color:'inherit'}">${guild?guild.name:'—'}</b></div>`
