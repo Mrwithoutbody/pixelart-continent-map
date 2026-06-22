@@ -448,6 +448,21 @@ function genWorld(seed){
   const legends=[]; { const pool=cities.slice().sort(()=>rng()-0.5).slice(0,3);
     pool.forEach((c,i)=>legends.push(LEG[(rng()*LEG.length|0)](c))); }
 
+  // intrigues: the hidden web beneath the alliances — betrayals, scheming, bastards, poison, affairs
+  const intrigues=[];
+  if(houses.length>=2){ const HH=houses, idx=()=>rng()*HH.length|0,
+      two=()=>{ let a=idx(),b=idx(); while(b===a)b=idx(); return [a,b]; };
+    const GENS=[
+      ()=>{ const[a,b]=two(); return {a,b,type:'zdrada',text:`Ród ${HH[a].name} potajemnie knuje przeciw sojusznikowi — Rodowi ${HH[b].name}.`}; },
+      ()=>{ const[a,b]=two(); return {a,b,type:'konszachty',text:`${HH[a].name} i ${HH[b].name} w tajemnicy dzielą łupy z trzeciego rodu.`}; },
+      ()=>{ const a=idx(); return {a,type:'bękart',text:`Dziedzic ${HH[a].heir.full} z Rodu ${HH[a].name} to w istocie bękart — prawdziwy syn zaginął.`}; },
+      ()=>{ const[a,b]=two(); const ch=person(); return {a,b,type:'podrzutek',text:`Podrzucone dziecko, ${ch.full}, wychowane w Rodzie ${HH[a].name}, nosi krew Rodu ${HH[b].name}.`}; },
+      ()=>{ const a=idx(); return {a,type:'trucizna',text:`${HH[a].title} ${HH[a].ruler.full} gaśnie w chorobie — szepczą o truciźnie.`}; },
+      ()=>{ const[a,b]=two(); return {a,b,type:'romans',text:`Sekretny romans łączy dziedziców Rodów ${HH[a].name} i ${HH[b].name}, wbrew woli ojców.`}; },
+      ()=>{ const[a,b]=two(); return {a,b,type:'szpieg',text:`Ród ${HH[a].name} trzyma szpiega na dworze Rodu ${HH[b].name}.`}; },
+    ];
+    const cnt=3+(rng()*3|0); for(let k=0;k<cnt;k++) intrigues.push(pick(GENS)()); }
+
   // chronicle: foundings (with the first lords), marriages, wars — named, dated, oldest first
   const events=[];
   const byAge=houses.slice().sort((p,q)=>p.founded-q.founded);
@@ -535,7 +550,7 @@ function genWorld(seed){
     merchants.push({home,dest,f:rng()<0.5?cities[home].f:-1,segs:segmentsFor(route),si:0,t:rng(),speed:0.10+rng()*0.10});}
 
   const world={seed,W,H,height,moist,biome,cost,fac,cities,edges,adj,cadj,merchants,trees,bushes,peaks,hills,rocks,fields,bridges,roadPaths,
-    houses,relations,ties,legends,events,bitmap:bakeTerrain(height,moist,biome,fac)};
+    houses,relations,ties,legends,intrigues,events,bitmap:bakeTerrain(height,moist,biome,fac)};
   // runtime route replanning (called when a caravan reaches its destination)
   world.replan=m=>{const home=m.dest,reach=reachableFrom(home);
     if(!reach.length){m.si=0;m.t=0;return;}
