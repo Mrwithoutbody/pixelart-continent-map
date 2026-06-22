@@ -6,11 +6,8 @@
 // Towns settle at their food ceiling (Malthusian) -> food/salt trade always matters; pop ~0.83 of
 // start, 0 town collapses over 2500 ticks across seeds.
 const ECON={
-  foodPerCap:0.0018,     // food eaten per head per tick (main "how fed" lever)
+  foodPerCap:0.0006,     // food eaten per head per tick (main "how fed" / sustainable-population lever)
   gruel:true,            // bakery may run a low-yield unsalted fallback (salt = efficiency, not a death gate)
-  popGrow:0.006,         // pop growth/tick when fed (toward housing capacity)
-  popShrink:0.003,       // pop loss/tick when starving — need falls with pop -> negative feedback, no death spiral
-  popFloor:25,
   ruinLimit:200,         // ticks of sustained famine before a building is abandoned (long + recoverable)
   cargoCap:100,              // caravan load size (Colonization 100-unit)
   caravanCapital:120, caravanMinGold:8, caravanUpkeep:12,   // starting purse; running cost per trip; below min -> bankrupt
@@ -112,14 +109,12 @@ function canAfford(c,id){ const cost=BUILD_COST[id]||{}; for(const r in cost) if
 function payCost(c,id){ const cost=BUILD_COST[id]||{}; for(const r in cost){ if(r==='złoto')c.gold=(c.gold||0)-cost[r]; else townTake(c,r,cost[r]); } }
 function missingFor(c,id){ const cost=BUILD_COST[id]||{},m=[]; for(const r in cost){ const have=affordHave(c,r); if(have<cost[r])m.push(`${Math.ceil(cost[r]-have)} ${r}`); } return m; }
 
-// ---- people & food: towns eat ONLY 'jedzenie'; population grows fed / shrinks starved ----
+// ---- food: towns eat ONLY 'jedzenie' (population/demography lives in engine/population.js) ----
 const FOOD='jedzenie';
-const HOUSE_POP={manor:240,townhouse:90,house:45,shack:16};                 // people a dwelling can house
 const FOOD_INPUTS=new Set();                                                // bakery inputs (filled below)
-recipesOf('piekarnia').forEach(r=>r.in.forEach(x=>FOOD_INPUTS.add(x[0])));  // {zboże,sól,ryby}
+recipesOf('piekarnia').forEach(r=>r.in.forEach(x=>FOOD_INPUTS.add(x[0])));  // {zboże,sól,ryby,mięso}
 const isFood=b=>recipesOf(b.id).some(r=>r.out[0]===FOOD);                   // a bakery
 const feedsTown=b=>{ if(isFood(b))return true; const r0=(PROD[b.id]&&PROD[b.id].out); return !!r0&&FOOD_INPUTS.has(r0[0]); }; // bakery OR its supplier (grain/fish/salt)
-function housingCap(c){ let n=0; for(const h of (c.houses||[])) if(!h.ruined) n+=HOUSE_POP[h.btype]||20; return n; }
 // abandon the smallest dwelling when a town has far more housing than people (depopulated)
 function ruinHouse(c){ const live=(c.houses||[]).filter(h=>!h.ruined); if(live.length<=1)return;
   const order={shack:0,house:1,townhouse:2,manor:3};
@@ -192,10 +187,10 @@ function tickEconomy(world,dt){
         const stored=townGive(c,or_,Math.min(oq,space),b); used+=stored;
         if(rec.out2){ const[o2,q2]=rec.out2, sp2=cap-used; if(sp2>0) used+=townGive(c,o2,Math.min(q2,sp2),b); }   // by-product (furs)
         break; } }                                                                                          // one recipe per tick
-    // everyone eats; fed -> population grows toward housing, starved -> it shrinks (need falls with it)
-    if(feedCity(c)){ c.starv=Math.max(0,(c.starv||0)-2);
-      const hc=housingCap(c); if(c.pop<hc) c.pop=Math.min(hc, (c.pop||0)*(1+ECON.popGrow)+0.2); }
-    else { c.starv=(c.starv||0)+1; c.pop=Math.max(ECON.popFloor,(c.pop||0)*(1-ECON.popShrink));
+    // everyone eats; demography (births/deaths/overcrowding) lives in stepPopulation()
+    const fed=feedCity(c); stepPopulation(c,fed);
+    if(fed) c.starv=Math.max(0,(c.starv||0)-2);
+    else { c.starv=(c.starv||0)+1;
       if(c.starv>=ECON.ruinLimit){                                   // chronic famine: abandon a structure
         if(c.pop < housingCap(c)*0.5) ruinHouse(c); else ruinOne(c); // depopulated -> empty homes; else a workplace
         c.starv=Math.floor(ECON.ruinLimit*0.6); } }
