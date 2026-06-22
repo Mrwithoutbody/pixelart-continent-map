@@ -39,15 +39,21 @@ function recipesOf(id){ const p=PROD[id]; if(!p)return[];
   if(p.recipes)return ECON.gruel?p.recipes:p.recipes.filter(r=>!r.gruel);
   if(p.out)return [{in:p.in?[p.in]:[], out:p.out}];
   return []; }
-// build cost (paid from the town's stockpile). Raw extractors are cheap; refiners + civic cost more.
+// build / rebuild cost — paid in materials from the town's warehouses. One scheme: drewno + kamień
+// everywhere, plus metal ("stal") for specialist buildings. No money: construction is materials.
 const BUILD_COST={
-  farm:{drewno:6},                 lumber_camp:{drewno:3},
-  mine:{drewno:8,'kamień':5},        quarry:{drewno:6},
-  fishery:{drewno:8},              salt_works:{drewno:6,'kamień':4},
-  hunter:{drewno:6},
-  piekarnia:{drewno:10,'kamień':6},  sawmill:{drewno:12},
-  smelter:{drewno:8,'kamień':14},    market:{drewno:10,'kamień':10,'złoto':10},
-  warehouse:{drewno:8},            tower:{drewno:12,'kamień':24},
+  // dwellings (also the rebuild cost when a house is abandoned)
+  shack:{drewno:4},                house:{drewno:8,'kamień':3},
+  townhouse:{drewno:14,'kamień':8}, manor:{drewno:24,'kamień':16},
+  // raw producers — mostly wood
+  farm:{drewno:8,'kamień':2},      lumber_camp:{drewno:6},
+  fishery:{drewno:8,'kamień':2},   hunter:{drewno:6},
+  quarry:{drewno:8},               mine:{drewno:10,'kamień':4},   salt_works:{drewno:8,'kamień':4},
+  // refiners + civic — wood + stone, metal for the advanced ones
+  piekarnia:{drewno:12,'kamień':8}, sawmill:{drewno:12,'kamień':4},
+  smelter:{drewno:10,'kamień':12,'metal':4},  market:{drewno:14,'kamień':12,'metal':2},
+  warehouse:{drewno:10,'kamień':6}, harbor:{drewno:14,'kamień':8,'metal':2},
+  chapel:{drewno:12,'kamień':10},   tower:{drewno:14,'kamień':20,'metal':6},
 };
 const BUILDABLE=['farm','piekarnia','hunter','lumber_camp','mine','quarry','fishery','salt_works','sawmill','smelter','market','warehouse','tower']
   .map(id=>({id, name:(BLD[id]||{name:id}).name, cost:BUILD_COST[id]||{}}));
@@ -158,8 +164,8 @@ function freeSpotNear(world,c){ for(let t=0;t<40;t++){ const a=Math.random()*6.2
   return {x,y}; } return null; }
 function tryBuild(world,c){ if((c.gold||0) < ECON.buildReserve) return;
   const id=chooseBuild(c); if(!id)return;
-  if(id==='__house'){ if((c.gold||0)<ECON.buildReserve+20)return; const s=freeSpotNear(world,c); if(!s)return;
-    c.houses.push({x:s.x,y:s.y,btype:'house',spr:SPR.house,stock:{},owner:{k:'rod',id:c.f}}); c.gold-=20; invalidateStores(); return; }
+  if(id==='__house'){ if(!canAfford(c,'house'))return; const s=freeSpotNear(world,c); if(!s)return;
+    payCost(c,'house'); c.houses.push({x:s.x,y:s.y,btype:'house',spr:SPR.house,stock:{},owner:{k:'rod',id:c.f}}); invalidateStores(); return; }
   if(!canAfford(c,id))return; const s=freeSpotNear(world,c); if(!s)return;
   payCost(c,id); const b=makeBuild(id,s.x,s.y); b.owner={k:'rod',id:c.f};
   c.r=Math.max(c.r,Math.hypot(s.x-c.x,s.y-c.y)+1); c.builds.push(b); invalidateStores(); }

@@ -114,8 +114,13 @@ function houseDetail(c,h){
    +`<div class="stat"><span>mieszkańcy</span><b>${h.ruined?'opuszczony':(HOUSE_POP[h.btype]||20)+' miejsc'}</b></div>`
    +`<div class="stat"><span>magazyn</span><b>${Math.floor(unitUsedOf(h))}/${buildStore(h.btype)}</b></div>`
    +`<div class="sect">skład</div>${skl}`
+   +(h.ruined?`<div class="sect">akcje</div><button class="btn sm" style="margin-top:6px;width:100%" onclick="rebuildHouse()">⚒ Odbuduj (${costStr(h.btype)})</button>`:'')
    +`</div>`);
 }
+// rebuild an abandoned dwelling, paying its material cost from the town
+function rebuildHouse(){ if(!selHouse)return; const c=WORLD.cities[selHouse.ci],h=selHouse.h; if(!h.ruined)return;
+  if(!canAfford(c,h.btype)) return flash(`brak: ${missingFor(c,h.btype).join(', ')}`);
+  payCost(c,h.btype); h.ruined=false; invalidateStores(); updateInfo(); saveGame(); flash(`odbudowano: ${RES_NAME[h.btype]||'dom'}`); }
 function updateInfo(){
   if(selMerchant&&WORLD){ caravanPanel(); return; }
   if(selected==null||!WORLD){info.classList.remove('open');document.body.classList.remove('has-info');return;}
