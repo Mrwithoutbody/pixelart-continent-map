@@ -359,20 +359,17 @@ function genWorld(seed){
     if(qty>0){ const rev=qty*price, costPart=cargo.cost*(qty/cargo.qty);
       townGive(c,cargo.res,qty); c.gold=gold-rev; m.gold+=rev; m.profit=(m.profit||0)+rev-costPart;
       cargo.qty-=qty; cargo.cost-=costPart; }
-    // overseas market: a PORT buys whatever's left, unlimited, at a poor price (so a caravan is never stuck)
-    if(cargo.qty>=1 && c.port){ const rev=cargo.qty*ECON.seaPrice;
-      m.gold+=rev; m.profit=(m.profit||0)+rev-cargo.cost; cargo.qty=0; cargo.cost=0; }
-    if(cargo.qty<1) m.cargo=null; };                                     // sold (incl. overseas) -> empty; else keep remainder
-  // pick the best market, but discount it by distance × the caravan's RISK coefficient.
+    if(cargo.qty<1) m.cargo=null; };                                     // fully sold -> empty; else keep the remainder
+  // pick the best market, discounted by distance × the caravan's RISK coefficient.
   // Low risk = bold, ranges far (hauls salt across the map); high risk = cautious, stays local.
   // For now risk is random per caravan. FUTURE: it should be derived from the CHRONICLES that build
   // up during play (a route's history of bandit raids / losses / safe passages raises or lowers it).
   const destFor=(home,reach,cargo,rand,risk)=>{ if(!cargo) return reach[(rand()*reach.length)|0];   // empty -> wander
     const hc=cities[home]; let best=null,bs=-1e9;
-    for(const d of reach){ const t=cities[d], full=cityCap(t)-cityUsed(t)<=0;
-      if(full && !t.port) continue;                       // skip full towns, but a PORT can always take it (overseas)
+    for(const d of reach){ const t=cities[d];
+      if(cityCap(t)-cityUsed(t)<=0) continue;             // skip towns with no room
       const dist=Math.hypot(t.x-hc.x,t.y-hc.y);
-      const val=full?ECON.seaPrice:valueAt(d,cargo.res);  // full port -> only the poor overseas price
+      const val=valueAt(d,cargo.res);
       const score=val-dist*risk+rand()*1.5; if(score>bs){bs=score;best=d;} }
     return best!=null?best:reach[(rand()*reach.length)|0]; };           // fallback: wander if nothing scored
   let MID=0;
