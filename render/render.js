@@ -87,20 +87,23 @@ function ownerName(o){ if(!o)return '—';
 const openPanel=html=>{ info.innerHTML=html; info.classList.add('open'); document.body.classList.add('has-info'); };
 
 // caravan inspector — the OTHER side of the exchange: what it carries, where, who buys, at what price
-function caravanPanel(){ const m=selMerchant; if(!m){clearCity();return;}
+function caravanPanel(){ const m=selMerchant; if(!m||m.dead||!WORLD.merchants.includes(m)){clearCity();return;}
   const dest=WORLD.cities[m.dest], seg=m.segs[Math.min(m.si,m.segs.length-1)];
   const mode=seg&&seg.mode==='sea'?'morzem':'lądem';
-  let body=`<div class="stat"><span>trasa</span><b>${mode}</b></div>`
-    +`<div class="stat"><span>cel</span><b>${dest?dest.name:'—'}</b></div>`;
-  if(!m.cargo){ body+=`<div class="li eco"><span>pusty — szuka towaru</span><span></span></div>`; }
-  else { const from=WORLD.cities[m.cargo.from!=null?m.cargo.from:m.home], buyer=WORLD.bestBuyer(m.dest,m.cargo.res);
+  const prof=Math.round(m.profit||0);
+  let body=`<div class="stat"><span>strategia</span><b>${m.strat?m.strat.name:'—'}</b></div>`
+    +`<div class="stat"><span>kapitał</span><b>${Math.round(m.gold||0)} zł</b></div>`
+    +`<div class="stat"><span>zysk</span><b style="color:${prof>=0?'var(--green)':'var(--red)'}">${prof>=0?'+':''}${prof} zł</b></div>`
+    +`<div class="stat"><span>trasa</span><b>${mode} → ${dest?dest.name:'—'}</b></div>`;
+  if(!m.cargo){ body+=`<div class="li eco"><span>pusty — szuka okazji</span><span></span></div>`; }
+  else { const buyer=WORLD.bestBuyer(m.dest,m.cargo.res), unit=Math.round(m.cargo.cost/m.cargo.qty*10)/10;
     body+=`<div class="sect">ładunek</div>`
       +`<div class="stat"><span>${resIcon(m.cargo.res)}${m.cargo.res}</span><b>${m.cargo.qty} szt</b></div>`
-      +`<div class="stat"><span>kupiony w</span><b>${from?from.name:'—'}</b></div>`
-      +`<div class="sect">sprzedaż</div>`
+      +`<div class="stat"><span>kupił po</span><b>${unit} zł/szt</b></div>`
+      +`<div class="sect">sprzeda</div>`
       +`<div class="stat"><span>kupiec</span><b>${buyer.build?buyer.build.name:'targ'} (${dest?dest.name:''})</b></div>`
       +`<div class="stat"><span>cena/szt</span><b>${buyer.price.toFixed(1)} zł</b></div>`
-      +`<div class="stat"><span>wartość</span><b>${Math.round(m.cargo.qty*buyer.price)} zł</b></div>`; }
+      +`<div class="stat"><span>marża</span><b style="color:${buyer.price>=unit?'var(--green)':'var(--red)'}">${buyer.price>=unit?'+':''}${Math.round((buyer.price-unit)*m.cargo.qty)} zł</b></div>`; }
   openPanel(`<div class="ihead"><span class="nm">🐎 Karawana</span><span class="x" onclick="clearCity()">✕</span></div><div class="ibody">${body}</div>`);
 }
 // dwelling inspector

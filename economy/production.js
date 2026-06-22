@@ -13,6 +13,7 @@ const ECON={
   popFloor:25,
   ruinLimit:200,         // ticks of sustained famine before a building is abandoned (long + recoverable)
   cargoCap:100, tradeVal:6, foodReserve:10,  // caravan: load size (Colonization 100-unit), gold/price scale, food kept home
+  caravanCapital:55, caravanMinGold:8, caravanUpkeep:12,   // starting purse; running cost per trip; below min -> bankrupt
   buildEvery:40, buildReserve:50,           // autonomous town growth: try a build every N ticks if treasury > reserve
   caravanEvery:60, caravanGold:140, fleetPerTown:3,   // a rich market town spawns a caravan; fleet capped at fleetPerTown*towns
 };
@@ -196,11 +197,12 @@ function tickEconomy(world,dt){
         c.starv=Math.floor(ECON.ruinLimit*0.6); } }
     // autonomous growth: each town periodically invests in the building it needs (staggered)
     if((world._tickN+ci)%ECON.buildEvery===0) tryBuild(world,c);
-    // a prosperous market town funds a new caravan (this is what creates new caravans)
+    // a prosperous market town funds a new caravan (spawnMerchant deducts the capital from its treasury)
     if(world.spawnMerchant && (world._tickN+ci)%ECON.caravanEvery===0
        && (c.gold||0)>ECON.caravanGold && has(c,'market')
        && world.merchants.length < ECON.fleetPerTown*world.cities.length){
-      if(world.spawnMerchant(ci)) c.gold-=40; } }                    // outfitting the caravan costs the town
+      world.spawnMerchant(ci); } }
+  if(world.reap) world.reap();                                       // remove bankrupt caravans
   return true;
 }
 // per-tick gross output of a town (resource -> rate), for the info panel (working buildings only).

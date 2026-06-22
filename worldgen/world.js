@@ -337,37 +337,48 @@ function genWorld(seed){
           segs.push({x0:B.dock.x,y0:B.dock.y,x1:B.x,y1:B.y,mode:'sea'}); }}
     for(const s of segs)s.len=Math.hypot(s.x1-s.x0,s.y1-s.y0)||1;return segs;};
 
-  // ---- merchants: caravans that HAUL goods between towns to organize production ----
-  // Load the home's biggest surplus, then route to the town that most NEEDS it (consumes it as a
-  // refiner input / is low on it / has free storage). Ore reaches smelters, timber/stone reach
-  // builders, food reaches markets. cityCap/cityUsed/PROD are runtime globals (loaded after this).
-  const valueAt=(ci,res)=>townPrice(cities[ci],res)*ECON.tradeVal;   // gold/unit = keenest buyer's bid x scale
-  // buy the home's biggest surplus on consignment (goods leave now, paid when sold)
-  const loadCargo=ci=>{ const c=cities[ci]; const tally={};
-    for(const u of storesOf(c)) for(const r in u.stock){ if(u.stock[r]>0) tally[r]=(tally[r]||0)+u.stock[r]; }
+  // ---- merchants: CAPITALISED traders. Each caravan owns a purse: it buys a good cheap at one town
+  // (paying that town), hauls it, sells it dearer elsewhere (the buyer town pays the caravan), and keeps
+  // the spread. A bad run drains the purse -> bankruptcy (removed). A random strategy biases what each
+  // one trades, so under the same world some caravans thrive and others die.
+  const valueAt=(ci,res)=>townPrice(cities[ci],res)*ECON.tradeVal;        // gold/unit at a town
+  const STRATS=[
+    {name:'spożywcza', goods:['jedzenie','zboże','ryby','sól','mięso']},  // staples: steady demand
+    {name:'surowcowa', goods:['drewno','kamień','ruda']},                 // bulk materials
+    {name:'luksusowa', goods:['metal','deski','towary']},                 // high-value, thin/volatile
+    {name:'wszystko',  goods:null} ];                                     // opportunist
+  // caravan buys at town ci with ITS OWN gold (per strategy); returns cargo {res,qty,cost} or null
+  const buyAt=(ci,m)=>{ const c=cities[ci],tally={};
+    for(const u of storesOf(c)) for(const r in u.stock) if(u.stock[r]>0) tally[r]=(tally[r]||0)+u.stock[r];
     let best=null,bv=4;
-    for(const r in tally){ const reserve=(r===FOOD)?cityNeed(c)*ECON.foodReserve:0; const avail=tally[r]-reserve; if(avail>bv){bv=avail;best=r;} }
-    if(!best)return null; const qty=Math.min(ECON.cargoCap,Math.floor(bv*0.5));
-    if(qty<=0)return null; townTake(c,best,qty); return {res:best,qty,from:ci}; };
-  // sell at the destination: it pays gold (only as much as it can afford & store); the producer earns it
-  const unloadCargo=(ci,cargo)=>{ if(!cargo)return; const c=cities[ci];
-    const free=Math.max(0,cityCap(c)-cityUsed(c)); if(free<=0)return;
-    const val=valueAt(ci,cargo.res), gold=c.gold||0, afford=val>0?Math.floor(gold/val):0;
-    const qty=Math.min(cargo.qty,free,afford); if(qty<=0)return;
-    const stored=townGive(c,cargo.res,qty); c.gold=gold-stored*val;                       // buyer pays for what it stored
-    if(cargo.from!=null) cities[cargo.from].gold=(cities[cargo.from].gold||0)+stored*val; };  // producer earns
-  const destFor=(reach,cargo,rand)=>{ if(!cargo) return reach[(rand()*reach.length)|0];   // empty caravan -> wander
+    for(const r in tally){ if(m.strat.goods&&!m.strat.goods.includes(r))continue;
+      const reserve=(r===FOOD)?cityNeed(c)*ECON.foodReserve:0, avail=tally[r]-reserve; if(avail>bv){bv=avail;best=r;} }
+    if(!best)return null; const price=valueAt(ci,best); if(price<=0)return null;
+    const qty=Math.min(ECON.cargoCap, Math.floor(bv*0.5), Math.floor(m.gold*0.8/price));
+    if(qty<=0)return null; const cost=qty*price; townTake(c,best,qty); c.gold=(c.gold||0)+cost; m.gold-=cost;  // caravan pays the seller town
+    return {res:best,qty,cost}; };
+  // caravan sells at town ci; the town pays what it can afford & store, the caravan banks the revenue
+  const sellAt=(ci,m)=>{ const cargo=m.cargo; if(!cargo){ return; } const c=cities[ci];
+    const free=Math.max(0,cityCap(c)-cityUsed(c)), price=valueAt(ci,cargo.res), gold=c.gold||0;
+    const afford=price>0?Math.floor(gold/price):0, qty=Math.min(cargo.qty,free,afford);
+    if(qty>0){ const rev=qty*price; townGive(c,cargo.res,qty); c.gold=gold-rev; m.gold+=rev;
+      m.profit=(m.profit||0)+rev-cargo.cost*(qty/cargo.qty); }
+    m.cargo=null; };                                                      // unsold remainder is written off (a loss)
+  const destFor=(reach,cargo,rand)=>{ if(!cargo) return reach[(rand()*reach.length)|0];   // empty -> wander to find goods
     let best=reach[0],bs=-1e9;
-    for(const d of reach){ if(cityCap(cities[d])-cityUsed(cities[d])<=0)continue;          // no room there
-      const score=valueAt(d,cargo.res)+rand()*1.5;                                         // sell where it pays most
-      if(score>bs){bs=score;best=d;} }
+    for(const d of reach){ if(cityCap(cities[d])-cityUsed(cities[d])<=0)continue;
+      const score=valueAt(d,cargo.res)+rand()*1.5; if(score>bs){bs=score;best=d;} }              // sell where it pays most
     return best; };
-  const merchants=[];
   let MID=0;
+  const newMerchant=(home,gold,rand)=>{ const reach=reachableFrom(home); if(!reach.length)return null;
+    const m={id:MID++,home,dest:home,f:cities[home].f,gold,profit:0,cargo:null,
+      strat:STRATS[(rand()*STRATS.length)|0],segs:[],si:0,t:0,speed:0.10+rand()*0.10};
+    m.cargo=buyAt(home,m); const dest=destFor(reach,m.cargo,rand),route=planRoute(home,dest);
+    if(!route||!route.length)return null; m.dest=dest; m.segs=segmentsFor(route); return m; };
+  const merchants=[];
   const FLEET=Math.min(90,Math.max(18,Math.round(cities.length*2.2)));   // scale caravans with the world
-  for(let m=0;m<FLEET;m++){const home=rng()*cities.length|0,reach=reachableFrom(home);if(!reach.length)continue;
-    const cargo=loadCargo(home),dest=destFor(reach,cargo,rng),route=planRoute(home,dest);if(!route||!route.length)continue;
-    merchants.push({id:MID++,home,dest,f:cities[home].f,cargo,segs:segmentsFor(route),si:0,t:rng(),speed:0.10+rng()*0.10});}
+  for(let i=0;i<FLEET;i++){ const home=rng()*cities.length|0;
+    const m=newMerchant(home, Math.round(ECON.caravanCapital*(0.6+rng()*0.9)), rng); if(m){ m.t=rng(); merchants.push(m); } }
 
   const layers={ rody:bakeLayer(biome,fac,FACTIONS.map(f=>f.tint),FACTIONS.map(f=>f.border)),
     gildie:bakeLayer(biome,facG,guilds.map(g=>hexRGB(g.color)),guilds.map(g=>g.color)),
@@ -375,19 +386,21 @@ function genWorld(seed){
   const world={seed,W,H,height,moist,biome,cost,fac,cities,edges,adj,cadj,merchants,trees,bushes,peaks,hills,rocks,fields,bridges,roadPaths,
     houses,relations,ties,legends,intrigues,events,guilds,guildRel,faiths,faithTension,
     base:bakeBase(height,moist,biome),layers,layer:'rody'};
-  // runtime route replanning (called when a caravan reaches its destination)
-  world.replan=m=>{ unloadCargo(m.dest,m.cargo);                          // arrived -> drop the haul
-    const home=m.dest,reach=reachableFrom(home);
-    if(!reach.length){m.cargo=null;m.si=0;m.t=0;return;}
-    const cargo=loadCargo(home),dest=destFor(reach,cargo,Math.random),route=planRoute(home,dest);   // load, then route to need
-    if(!route){m.cargo=null;m.si=0;m.t=0;return;}
-    m.home=home;m.dest=dest;m.cargo=cargo;m.segs=segmentsFor(route);m.si=0;m.t=0;};
-  // spawn a fresh caravan from a (prosperous) town — called by the economy tick when a market town is rich
-  world.spawnMerchant=home=>{ const reach=reachableFrom(home); if(!reach.length)return false;
-    const cargo=loadCargo(home),dest=destFor(reach,cargo,Math.random),route=planRoute(home,dest);
-    if(!route||!route.length)return false;
-    merchants.push({id:MID++,home,dest,f:cities[home].f,cargo,segs:segmentsFor(route),si:0,t:0,speed:0.10+Math.random()*0.10});
-    return true; };
+  // runtime: caravan arrives -> sell, maybe go bankrupt, else buy again and route to the best market
+  world.replan=m=>{ sellAt(m.dest,m); m.gold-=ECON.caravanUpkeep;        // sell, then pay running costs
+    if(m.gold < ECON.caravanMinGold){ m.dead=true; return; }              // bankrupt -> removed by reap()
+    const home=m.dest, reach=reachableFrom(home); if(!reach.length){ m.dead=true; return; }
+    m.home=home; m.cargo=buyAt(home,m);
+    const dest=destFor(reach,m.cargo,Math.random), route=planRoute(home,dest);
+    if(!route){ m.si=0;m.t=0; return; }
+    m.dest=dest; m.segs=segmentsFor(route); m.si=0; m.t=0; };
+  // a prosperous town funds a fresh caravan out of its treasury (this is what creates new caravans)
+  world.spawnMerchant=home=>{ const c=cities[home], cap=Math.min((c.gold||0)*0.3, ECON.caravanCapital);
+    if(cap < ECON.caravanMinGold*2) return false;
+    const m=newMerchant(home, Math.round(cap), Math.random); if(!m) return false;
+    c.gold-=cap; merchants.push(m); return true; };
+  // sweep out bankrupt caravans (called once per economy tick)
+  world.reap=()=>{ for(let i=merchants.length-1;i>=0;i--) if(merchants[i].dead) merchants.splice(i,1); };
   // who buys a good at a town, and at what unit price (the other side of the exchange) — for caravan UI
   world.bestBuyer=(ci,res)=>{ const c=cities[ci]; let b=null,bp=0; for(const x of c.builds){ if(x.ruined)continue; const p=priceB(x,res); if(p>bp){bp=p;b=x;} } return {build:b,price:bp*ECON.tradeVal}; };
   // ---- terrain-model API for future units ----
