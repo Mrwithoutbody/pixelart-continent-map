@@ -247,6 +247,12 @@ function genWorld(seed){
       h.spr = h.btype==='shack'?SPR.hut : h.btype==='manor'?SPR.manor
             : h.btype==='townhouse'?SPR.townhouse : (((h.x+h.y)&1)?SPR.house:SPR.cottage); });
     c.builds=placeEconomy(c,biome,rng);
+    // owners: every building & dwelling belongs to an organisation — ród / gildia / religia (only these)
+    const oRod={k:'rod',id:c.f}, oGuild=c.guild>=0?{k:'gildia',id:c.guild}:oRod, oFaith={k:'wiara',id:c.faith};
+    for(const b of c.builds) b.owner = b.id==='chapel'?oFaith
+      : (['market','harbor','warehouse'].includes(b.id)&&c.guild>=0)?oGuild : oRod;
+    c.houses.forEach((h,i)=>{ h.owner = h.btype==='manor'?oRod
+      : (c.guild>=0&&i%3===0)?oGuild : (i%5===0)?oFaith : oRod; });
     c.fields = c.builds.some(b=>b.id==='farm') ? placeFields(c,biome,rng) : [];
     for(const f of c.fields) fields.push(f);
     const all=c.houses.concat(c.builds);
@@ -357,10 +363,11 @@ function genWorld(seed){
       if(score>bs){bs=score;best=d;} }
     return best; };
   const merchants=[];
+  let MID=0;
   const FLEET=Math.min(90,Math.max(18,Math.round(cities.length*2.2)));   // scale caravans with the world
   for(let m=0;m<FLEET;m++){const home=rng()*cities.length|0,reach=reachableFrom(home);if(!reach.length)continue;
     const cargo=loadCargo(home),dest=destFor(reach,cargo,rng),route=planRoute(home,dest);if(!route||!route.length)continue;
-    merchants.push({home,dest,f:rng()<0.5?cities[home].f:-1,cargo,segs:segmentsFor(route),si:0,t:rng(),speed:0.10+rng()*0.10});}
+    merchants.push({id:MID++,home,dest,f:cities[home].f,cargo,segs:segmentsFor(route),si:0,t:rng(),speed:0.10+rng()*0.10});}
 
   const layers={ rody:bakeLayer(biome,fac,FACTIONS.map(f=>f.tint),FACTIONS.map(f=>f.border)),
     gildie:bakeLayer(biome,facG,guilds.map(g=>hexRGB(g.color)),guilds.map(g=>g.color)),
@@ -375,6 +382,14 @@ function genWorld(seed){
     const cargo=loadCargo(home),dest=destFor(reach,cargo,Math.random),route=planRoute(home,dest);   // load, then route to need
     if(!route){m.cargo=null;m.si=0;m.t=0;return;}
     m.home=home;m.dest=dest;m.cargo=cargo;m.segs=segmentsFor(route);m.si=0;m.t=0;};
+  // spawn a fresh caravan from a (prosperous) town — called by the economy tick when a market town is rich
+  world.spawnMerchant=home=>{ const reach=reachableFrom(home); if(!reach.length)return false;
+    const cargo=loadCargo(home),dest=destFor(reach,cargo,Math.random),route=planRoute(home,dest);
+    if(!route||!route.length)return false;
+    merchants.push({id:MID++,home,dest,f:cities[home].f,cargo,segs:segmentsFor(route),si:0,t:0,speed:0.10+Math.random()*0.10});
+    return true; };
+  // who buys a good at a town, and at what unit price (the other side of the exchange) — for caravan UI
+  world.bestBuyer=(ci,res)=>{ const c=cities[ci]; let b=null,bp=0; for(const x of c.builds){ if(x.ruined)continue; const p=priceB(x,res); if(p>bp){bp=p;b=x;} } return {build:b,price:bp*ECON.tradeVal}; };
   // ---- terrain-model API for future units ----
   world.idx=(x,y)=>((y|0)*W+(x|0));
   world.inBounds=(x,y)=>x>=0&&y>=0&&x<W&&y<H;

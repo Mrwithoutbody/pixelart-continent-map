@@ -14,6 +14,7 @@ const ECON={
   ruinLimit:200,         // ticks of sustained famine before a building is abandoned (long + recoverable)
   cargoCap:24, tradeVal:6, foodReserve:10,  // caravan: load size, gold/price scale, ticks of food kept home
   buildEvery:40, buildReserve:50,           // autonomous town growth: try a build every N ticks if treasury > reserve
+  caravanEvery:60, caravanGold:140, fleetPerTown:3,   // a rich market town spawns a caravan; fleet capped at fleetPerTown*towns
 };
 
 // recipe per building: out:[res,rate] always; in:[res,rate] for refiners that consume a raw input.
@@ -75,7 +76,7 @@ let STORES_EPOCH=1;
 function invalidateStores(){ STORES_EPOCH++; }
 function storesOf(c){ if(c._se===STORES_EPOCH && c._stores) return c._stores;
   const a=[]; for(const b of (c.builds||[])) if(!b.ruined){ b.stock||(b.stock={}); a.push(b); }
-  for(const h of (c.houses||[])){ h.stock||(h.stock={}); a.push(h); }
+  for(const h of (c.houses||[])) if(!h.ruined){ h.stock||(h.stock={}); a.push(h); }
   c._stores=a; c._se=STORES_EPOCH; return a; }
 function townHas(c,res){ let s=0; for(const u of storesOf(c)) s+=(u.stock[res]||0); return s; }
 function cityCap(c){ let cap=0; for(const u of storesOf(c)) cap+=unitCap(u); return cap; }
@@ -110,7 +111,13 @@ const FOOD_INPUTS=new Set();                                                // b
 recipesOf('piekarnia').forEach(r=>r.in.forEach(x=>FOOD_INPUTS.add(x[0])));  // {zboże,sól,ryby}
 const isFood=b=>recipesOf(b.id).some(r=>r.out[0]===FOOD);                   // a bakery
 const feedsTown=b=>{ if(isFood(b))return true; const r0=(PROD[b.id]&&PROD[b.id].out); return !!r0&&FOOD_INPUTS.has(r0[0]); }; // bakery OR its supplier (grain/fish/salt)
-function housingCap(c){ let n=0; for(const h of (c.houses||[])) n+=HOUSE_POP[h.btype]||20; return n; }
+function housingCap(c){ let n=0; for(const h of (c.houses||[])) if(!h.ruined) n+=HOUSE_POP[h.btype]||20; return n; }
+// abandon the smallest dwelling when a town has far more housing than people (depopulated)
+function ruinHouse(c){ const live=(c.houses||[]).filter(h=>!h.ruined); if(live.length<=1)return;
+  const order={shack:0,house:1,townhouse:2,manor:3};
+  let t=live[0]; for(const h of live) if((order[h.btype]||0)<(order[t.btype]||0)) t=h;
+  const s=t.stock||{}; t.ruined=true; invalidateStores();
+  for(const r in s){ if(s[r]>0) townGive(c,r,s[r]); } t.stock={}; }
 function cityFood(c){ let n=0; for(const b of (c.builds||[])){ if(b.ruined)continue;
   for(const r of recipesOf(b.id)) if(r.out[0]===FOOD){ n+=r.out[1]; break; } } return n; }
 function cityNeed(c){ return (c.pop||0)*ECON.foodPerCap; }
@@ -178,9 +185,16 @@ function tickEconomy(world,dt){
     if(feedCity(c)){ c.starv=Math.max(0,(c.starv||0)-2);
       const hc=housingCap(c); if(c.pop<hc) c.pop=Math.min(hc, (c.pop||0)*(1+ECON.popGrow)+0.2); }
     else { c.starv=(c.starv||0)+1; c.pop=Math.max(ECON.popFloor,(c.pop||0)*(1-ECON.popShrink));
-      if(c.starv>=ECON.ruinLimit){ ruinOne(c); c.starv=Math.floor(ECON.ruinLimit*0.6); } }
+      if(c.starv>=ECON.ruinLimit){                                   // chronic famine: abandon a structure
+        if(c.pop < housingCap(c)*0.5) ruinHouse(c); else ruinOne(c); // depopulated -> empty homes; else a workplace
+        c.starv=Math.floor(ECON.ruinLimit*0.6); } }
     // autonomous growth: each town periodically invests in the building it needs (staggered)
-    if((world._tickN+ci)%ECON.buildEvery===0) tryBuild(world,c); }
+    if((world._tickN+ci)%ECON.buildEvery===0) tryBuild(world,c);
+    // a prosperous market town funds a new caravan (this is what creates new caravans)
+    if(world.spawnMerchant && (world._tickN+ci)%ECON.caravanEvery===0
+       && (c.gold||0)>ECON.caravanGold && has(c,'market')
+       && world.merchants.length < ECON.fleetPerTown*world.cities.length){
+      if(world.spawnMerchant(ci)) c.gold-=40; } }                    // outfitting the caravan costs the town
   return true;
 }
 // per-tick gross output of a town (resource -> rate), for the info panel (working buildings only).

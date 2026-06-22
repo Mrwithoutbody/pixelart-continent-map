@@ -21,11 +21,11 @@ addEventListener('mouseup',e=>{ if(downPos){const dx=e.clientX-downPos.x,dy=e.cl
 addEventListener('mousemove',e=>{if(!drag)return;cam.x=drag.cx-(e.clientX-drag.sx)/cam.zoom;cam.y=drag.cy-(e.clientY-drag.sy)/cam.zoom;clampCam();});
 
 // ---- selection + city / building info panel (GUI markup lives in index.html #info) ----
-let selected=null, selBuild=null, buildMode=null, infoTab='miasto';   // city idx · {ci,b} building · build-type id · panel tab
+let selected=null, selBuild=null, selHouse=null, selMerchant=null, buildMode=null, infoTab='miasto';   // selections + build-type + panel tab
 const BIOME_NAME=['ocean','płycizna','plaża','pustynia','trawa','las','wzgórza','góry'];
 const RES_NAME={manor:'Dwór',townhouse:'Kamienica',house:'Dom',shack:'Chata'};
 const info=document.getElementById('info');
-function clearCity(){selected=null;selBuild=null;infoTab='miasto';updateInfo();}    // panel close button
+function clearCity(){selected=null;selBuild=null;selHouse=null;selMerchant=null;infoTab='miasto';updateInfo();}    // panel close button
 // enter/leave build mode (a building-type id to place on the next map click)
 function setBuild(id){ buildMode=id; document.body.classList.toggle('building',!!id);
   const bb=document.getElementById('buildbar'); if(bb)bb.classList.remove('open'); }
@@ -34,13 +34,22 @@ addEventListener('keydown',e=>{ if(e.key==='Escape'){exitBuild();clearCity();} }
 
 function pickAt(sx,sy){ if(!WORLD)return; const[wx,wy]=s2w(sx,sy);
   if(buildMode){ placeBuilding(wx,wy); return; }
-  // nearest economy building under the cursor (a few tiles) -> select it
+  // caravan under the cursor? (they sit on top)
+  let mm=null,mdist=3; for(const m of WORLD.merchants){ if(!m.segs.length)continue;
+    const s=m.segs[Math.min(m.si,m.segs.length-1)], mx=s.x0+(s.x1-s.x0)*m.t, my=s.y0+(s.y1-s.y0)*m.t;
+    const d=Math.hypot(mx-wx,my-wy); if(d<mdist){mdist=d;mm=m;} }
+  if(mm){ selMerchant=mm; selected=null; selBuild=null; selHouse=null; updateInfo(); return; }
+  // economy building?
   let bb=null,bd=3.5,bci=-1;
   WORLD.cities.forEach((c,ci)=>{ for(const b of c.builds){ const d=Math.hypot(b.x-wx,b.y-wy); if(d<bd){bd=d;bb=b;bci=ci;} } });
-  if(bb){ selBuild={ci:bci,b:bb}; selected=bci; infoTab='budynki'; updateInfo(); return; }
+  if(bb){ selBuild={ci:bci,b:bb}; selected=bci; selHouse=null; selMerchant=null; infoTab='budynki'; updateInfo(); return; }
+  // dwelling?
+  let hh=null,hd=3,hci=-1;
+  WORLD.cities.forEach((c,ci)=>{ for(const h of c.houses){ const d=Math.hypot(h.x-wx,h.y-wy); if(d<hd){hd=d;hh=h;hci=ci;} } });
+  if(hh){ selHouse={ci:hci,h:hh}; selected=hci; selBuild=null; selMerchant=null; updateInfo(); return; }
   // else nearest town
   let best=null,cd=1e9; WORLD.cities.forEach((c,i)=>{const d=Math.hypot(c.x-wx,c.y-wy); if(d<c.r+3&&d<cd){cd=d;best=i;}});
-  selected=best; selBuild=null; updateInfo();
+  selected=best; selBuild=null; selHouse=null; selMerchant=null; updateInfo();
 }
 function flash(msg){ const t=document.getElementById('toast'); if(!t)return;
   t.textContent=msg; t.classList.add('show'); clearTimeout(flash._t); flash._t=setTimeout(()=>t.classList.remove('show'),1600); }
@@ -68,9 +77,50 @@ function pickBuild(bi){ const c=WORLD.cities[selected]; if(!c||!c.builds[bi])ret
 function unpickBuild(){ selBuild=null; updateInfo(); }
 
 // city panel: shared header + Miasto / Budynki tabs (building detail lives inside Budynki).
+// name of an owning organisation (ród / gildia / religia)
+function ownerName(o){ if(!o)return '—';
+  if(o.k==='gildia') return (WORLD.guilds[o.id]||{}).name||'Gildia';
+  if(o.k==='wiara')  return (WORLD.faiths[o.id]||{}).name||'Wiara';
+  const h=WORLD.houses.find(x=>x.f===o.id); return 'Ród '+(h?h.name:(FACTIONS[o.id]||{}).name); }
+const openPanel=html=>{ info.innerHTML=html; info.classList.add('open'); document.body.classList.add('has-info'); };
+
+// caravan inspector — the OTHER side of the exchange: what it carries, where, who buys, at what price
+function caravanPanel(){ const m=selMerchant; if(!m){clearCity();return;}
+  const dest=WORLD.cities[m.dest], seg=m.segs[Math.min(m.si,m.segs.length-1)];
+  const mode=seg&&seg.mode==='sea'?'morzem':'lądem';
+  let body=`<div class="stat"><span>trasa</span><b>${mode}</b></div>`
+    +`<div class="stat"><span>cel</span><b>${dest?dest.name:'—'}</b></div>`;
+  if(!m.cargo){ body+=`<div class="li eco"><span>pusty — szuka towaru</span><span></span></div>`; }
+  else { const from=WORLD.cities[m.cargo.from!=null?m.cargo.from:m.home], buyer=WORLD.bestBuyer(m.dest,m.cargo.res);
+    body+=`<div class="sect">ładunek</div>`
+      +`<div class="stat"><span>${m.cargo.res}</span><b>${m.cargo.qty} szt</b></div>`
+      +`<div class="stat"><span>kupiony w</span><b>${from?from.name:'—'}</b></div>`
+      +`<div class="sect">sprzedaż</div>`
+      +`<div class="stat"><span>kupiec</span><b>${buyer.build?buyer.build.name:'targ'} (${dest?dest.name:''})</b></div>`
+      +`<div class="stat"><span>cena/szt</span><b>${buyer.price.toFixed(1)} zł</b></div>`
+      +`<div class="stat"><span>wartość</span><b>${Math.round(m.cargo.qty*buyer.price)} zł</b></div>`; }
+  openPanel(`<div class="ihead"><span class="nm">🐎 Karawana</span><span class="x" onclick="clearCity()">✕</span></div><div class="ibody">${body}</div>`);
+}
+// dwelling inspector
+function houseDetail(c,h){
+  const keys=Object.keys(h.stock||{}).filter(r=>h.stock[r]>0);
+  const skl=keys.length? keys.map(r=>`<div class="li"><span>${r}</span><span>${Math.floor(h.stock[r])}</span></div>`).join('')
+    : `<div class="li eco"><span>pusto</span><span></span></div>`;
+  openPanel(`<div class="ihead"><span class="nm">${c.name}</span><span class="x" onclick="clearCity()">✕</span></div>`
+   +`<div class="ibody">`
+   +`<div class="li clk back" onclick="selHouse=null;updateInfo()"><span>‹ miasto</span><span></span></div>`
+   +`<div class="sect">${RES_NAME[h.btype]||'Dom'}${h.ruined?' <span class="capn full">⚠ pustostan</span>':''}</div>`
+   +`<div class="stat"><span>właściciel</span><b>${ownerName(h.owner)}</b></div>`
+   +`<div class="stat"><span>mieszkańcy</span><b>${h.ruined?'opuszczony':(HOUSE_POP[h.btype]||20)+' miejsc'}</b></div>`
+   +`<div class="stat"><span>magazyn</span><b>${Math.floor(unitUsedOf(h))}/${buildStore(h.btype)}</b></div>`
+   +`<div class="sect">skład</div>${skl}`
+   +`</div>`);
+}
 function updateInfo(){
+  if(selMerchant&&WORLD){ caravanPanel(); return; }
   if(selected==null||!WORLD){info.classList.remove('open');document.body.classList.remove('has-info');return;}
   const c=WORLD.cities[selected];
+  if(selHouse&&selHouse.ci===selected&&selHouse.h){ houseDetail(c,selHouse.h); return; }
   info.innerHTML=
     `<div class="ihead"><span class="nm">${c.name}</span><span class="x" onclick="clearCity()">✕</span></div>`
    +`<div class="tabs">`
@@ -122,6 +172,7 @@ function buildingDetail(c,b){ const p=PROD[b.id]||{};
    + `<button class="btn sm" style="margin-top:6px;width:100%" onclick="rebuildBuild()">⚒ Odbuduj (${costStr(b.id)})</button>`
    + `<button class="btn sm ghost" style="margin-top:6px;width:100%" onclick="demolishBuild()">✕ Rozbierz</button>`;
   return head
+   + `<div class="stat"><span>właściciel</span><b>${ownerName(b.owner)}</b></div>`
    + `<div class="stat"><span>magazyn</span><b>${Math.floor(unitUsedOf(b))}/${buildStore(b.id)}</b></div>`
    + recipeRows(b,c)
    + priceChips(c,b)
@@ -273,9 +324,14 @@ function render(){
     const r=Math.round((c.r+4)*cam.zoom), lw=Math.max(3,Math.round(cam.zoom*1.1));
     ctx.strokeStyle='#ffe066';ctx.lineWidth=lw;ctx.lineJoin='miter';ctx.setLineDash([]);
     ctx.strokeRect(Math.round(sx)-r, Math.round(sy)-r, r*2, r*2);}   // chunky square bracket, no rounding
-  if(selBuild){ const b=selBuild.b,[bx,by]=w2s(b.x,b.y),r=Math.max(6,2.2*cam.zoom),lw=Math.max(2,Math.round(cam.zoom*0.9));
+  const framed = selBuild?selBuild.b : (selHouse&&selHouse.ci===selected?selHouse.h:null);
+  if(framed){ const[bx,by]=w2s(framed.x,framed.y),r=Math.max(6,2.2*cam.zoom),lw=Math.max(2,Math.round(cam.zoom*0.9));
     ctx.strokeStyle='#ffe066';ctx.lineWidth=lw;ctx.lineJoin='miter';ctx.setLineDash([]);
-    ctx.strokeRect(Math.round(bx-r), Math.round(by-r*1.7), Math.round(r*2), Math.round(r*2)); }   // tight bracket on the picked building
+    ctx.strokeRect(Math.round(bx-r), Math.round(by-r*1.7), Math.round(r*2), Math.round(r*2)); }   // tight bracket on picked building/house
+  if(selMerchant&&selMerchant.segs.length){ const s=selMerchant.segs[Math.min(selMerchant.si,selMerchant.segs.length-1)];
+    const mx=s.x0+(s.x1-s.x0)*selMerchant.t, my=s.y0+(s.y1-s.y0)*selMerchant.t, [px,py]=w2s(mx,my), r=Math.max(7,cam.zoom*2.6);
+    ctx.strokeStyle='#ffe066';ctx.lineWidth=Math.max(2,cam.zoom*0.8);ctx.setLineDash([]);
+    ctx.strokeRect(Math.round(px-r),Math.round(py-r),Math.round(r*2),Math.round(r*2)); }   // bracket on the picked caravan
   if(WORLD.layer==='ceny') drawPriceLayer();
   drawPorts();
   drawLabels();
@@ -304,7 +360,7 @@ function tick(now){const dt=Math.min(0.05,(now-last)/1000);last=now;
 // ---------- boot ----------
 // regen builds a fresh world (used by the generating screen + in-game "new map").
 function regen(seed){WORLD=genWorld(typeof seed==='number'?seed:(Math.random()*1e9|0));clampCam();
-  selected=null;updateInfo();
+  selected=null;selBuild=null;selHouse=null;selMerchant=null;updateInfo();
   if(typeof renderChronicle==='function') renderChronicle();
   document.querySelectorAll('.lyr').forEach(b=>b.classList.toggle('on',b.dataset.l==='rody'));   // reset layer switch
   const el=document.getElementById('seed');if(el)el.textContent=WORLD.seed;
