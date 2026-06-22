@@ -90,6 +90,7 @@ function cityTab(c){ const f=FACTIONS[c.f];
    +   (c.seat?` <span class="port">★ stolica</span>`:'')+(c.port?` <span class="port">⚓ port</span>`:'')+`</div>`
    + (house?`<div class="stat"><span>włada</span><b>${house.title} ${house.ruler.full}</b></div>`:'')
    + `<div class="stat"><span>populacja</span><b>${c.pop.toLocaleString('pl')}</b></div>`
+   + foodStat(c)
    + `<div class="stat"><span>gospodarka</span><b>${c.role||'—'}</b></div>`
    + `<div class="stat"><span>gildia</span><b style="color:${guild?guild.color:'inherit'}">${guild?guild.name:'—'}</b></div>`
    + `<div class="stat"><span>wiara</span><b style="color:${faith?faith.color:'inherit'}">${faith?faith.name:'—'}</b></div>`
@@ -97,17 +98,28 @@ function cityTab(c){ const f=FACTIONS[c.f];
    + `<div class="stat"><span>drogi</span><b>${WORLD.adj[selected].length}</b></div>`
    + `<div class="sect">mieszkalne (${c.houses.length})</div><div class="list">${resRows}</div>`;
 }
+// food supply vs the population's appetite (red when short -> famine looming)
+function foodStat(c){ const out=cityFood(c), need=cityNeed(c), ok=out>=need-1e-6;
+  return `<div class="stat"><span>wyżywienie</span><b style="color:${ok?'inherit':'var(--red)'}">${out.toFixed(1)}/${need.toFixed(1)}${ok?'':' · głód!'}</b></div>`
+   + ((c.starv||0)>0?`<div class="stat"><span>głód</span><b style="color:var(--red)">${c.starv}/${STARVE_LIMIT}</b></div>`:''); }
 // Budynki tab: clicking a building drills into its detail (same panel); back link returns to the list.
 function buildsTab(c){
   if(selBuild && selBuild.ci===selected) return buildingDetail(c,selBuild.b);
   const list=c.builds.length
-    ? c.builds.map((b,i)=>`<div class="li eco clk" onclick="pickBuild(${i})"><span>${b.name}</span><span>›</span></div>`).join('')
+    ? c.builds.map((b,i)=>`<div class="li eco clk" onclick="pickBuild(${i})"><span>${b.ruined?'⚠ ':''}${b.name}</span><span style="color:${b.ruined?'var(--red)':'inherit'}">${b.ruined?'ruina':'›'}</span></div>`).join('')
     : `<div class="li eco"><span>brak — zbuduj coś (🔨)</span><span></span></div>`;
   return `<div class="sect">budynki (${c.builds.length})</div><div class="list">${list}</div>`+prodRows(c);
 }
 function buildingDetail(c,b){ const p=PROD[b.id]||{};
-  return `<div class="li clk back" onclick="unpickBuild()"><span>‹ wszystkie budynki</span><span></span></div>`
-   + `<div class="sect">${b.name}</div>`
+  const head=`<div class="li clk back" onclick="unpickBuild()"><span>‹ wszystkie budynki</span><span></span></div>`
+   + `<div class="sect">${b.name}${b.ruined?' <span class="capn full">⚠ ruina</span>':''}</div>`;
+  if(b.ruined) return head
+   + `<div class="stat"><span>stan</span><b style="color:var(--red)">opuszczony — brak ludzi</b></div>`
+   + `<div class="li eco"><span>nie produkuje, nie magazynuje</span><span></span></div>`
+   + `<div class="sect">akcje</div>`
+   + `<button class="btn sm" style="margin-top:6px;width:100%" onclick="rebuildBuild()">⚒ Odbuduj (${costStr(b.id)})</button>`
+   + `<button class="btn sm ghost" style="margin-top:6px;width:100%" onclick="demolishBuild()">✕ Rozbierz</button>`;
+  return head
    + `<div class="stat"><span>magazyn</span><b>+${buildStore(b.id)} miejsca</b></div>`
    + (p.in?`<div class="stat"><span>zużywa</span><b>−${p.in[1]} ${p.in[0]}/turę</b></div>`:'')
    + `<div class="stat"><span>produkuje</span><b>${p.out?`+${p.out[1]} ${p.out[0]}/turę`:'—'}</b></div>`
@@ -116,6 +128,10 @@ function buildingDetail(c,b){ const p=PROD[b.id]||{};
    + `<div class="sect">akcje</div><div class="li eco"><span>zadania — wkrótce</span><span></span></div>`
    + `<button class="btn sm ghost" style="margin-top:10px;width:100%" onclick="demolishBuild()">✕ Rozbierz</button>`;
 }
+// rebuild a ruined building, paying its build cost again from the town stock
+function rebuildBuild(){ if(!selBuild)return; const c=WORLD.cities[selBuild.ci],b=selBuild.b; if(!b.ruined)return;
+  if(!canAfford(c,b.id)) return flash(`brak: ${missingFor(c,b.id).join(', ')}`);
+  payCost(c,b.id); b.ruined=false; updateInfo(); saveGame(); flash(`odbudowano: ${b.name}`); }
 // production + stockpile sections for a town
 function prodRows(c){
   const out=cityOutputs(c), ok=Object.keys(out);
@@ -203,7 +219,11 @@ function render(){
     for(const b of c.builds) if(b.x>=vb.x0&&b.x<=vb.x1&&b.y>=vb.y0&&b.y<=vb.y1) ents.push(b);
   }
   ents.sort((a,b)=>a.y-b.y);
-  for(const e of ents) blit(e.spr,e.x,e.y);
+  for(const e of ents){
+    if(e.ruined){ ctx.globalAlpha=0.4; blit(e.spr,e.x,e.y,false); ctx.globalAlpha=1;   // faded husk
+      const[sx,sy]=w2s(e.x,e.y),z=cam.zoom; ctx.fillStyle='rgba(34,18,10,0.5)';
+      ctx.fillRect(Math.round(sx-z),Math.round(sy-z*1.6),Math.ceil(z*2),Math.ceil(z*1.8)); }   // soot/rubble
+    else blit(e.spr,e.x,e.y); }
   for(const m of WORLD.merchants){ if(!m.segs.length)continue;
     const s=m.segs[Math.min(m.si,m.segs.length-1)];
     const mx=s.x0+(s.x1-s.x0)*m.t, my=s.y0+(s.y1-s.y0)*m.t;
@@ -257,7 +277,7 @@ function hasSave(){ try{ return !!localStorage.getItem(SAVE_KEY); }catch(e){ ret
 function saveGame(){ if(!WORLD)return; try{
   const data={ seed:WORLD.seed, layer:WORLD.layer||'rody',
     cam:{x:cam.x,y:cam.y,zoom:cam.zoom},
-    cities:WORLD.cities.map(c=>({ stock:c.stock||{}, builds:(c.builds||[]).map(b=>({id:b.id,x:b.x,y:b.y})) })) };
+    cities:WORLD.cities.map(c=>({ stock:c.stock||{}, builds:(c.builds||[]).map(b=>({id:b.id,x:b.x,y:b.y,ruined:!!b.ruined})) })) };
   localStorage.setItem(SAVE_KEY, JSON.stringify(data));
 }catch(e){} }
 function loadGame(){ try{
@@ -265,7 +285,7 @@ function loadGame(){ try{
   regen(data.seed);                                                   // rebuild the deterministic base world
   (data.cities||[]).forEach((sc,i)=>{ const c=WORLD.cities[i]; if(!c)return;
     c.stock=sc.stock||c.stock;
-    c.builds=(sc.builds||[]).map(b=>makeBuild(b.id,b.x,b.y));         // rehydrate (canvas sprite re-derived)
+    c.builds=(sc.builds||[]).map(b=>{const nb=makeBuild(b.id,b.x,b.y); nb.ruined=!!b.ruined; return nb;});   // rehydrate (sprite re-derived, ruin state kept)
     for(const b of c.builds) c.r=Math.max(c.r,Math.hypot(b.x-c.x,b.y-c.y)+1); });
   WORLD.layer=data.layer||'rody';
   document.querySelectorAll('.lyr').forEach(b=>b.classList.toggle('on',b.dataset.l===WORLD.layer));

@@ -334,9 +334,10 @@ function genWorld(seed){
   // refiner input / is low on it / has free storage). Ore reaches smelters, timber/stone reach
   // builders, food reaches markets. cityCap/cityUsed/PROD are runtime globals (loaded after this).
   const CARGO_CAP=12;
-  const loadCargo=ci=>{ const st=cities[ci].stock||{}; let best=null,bv=4;       // need >4 to bother hauling
-    for(const r in st){ if(st[r]>bv){bv=st[r];best=r;} }
-    if(!best)return null; const qty=Math.min(CARGO_CAP,Math.floor(st[best]*0.5)); // take half the surplus
+  const loadCargo=ci=>{ const c=cities[ci],st=c.stock||{}; let best=null,bv=4;     // need >4 spare to bother hauling
+    for(const r in st){ const reserve=FOOD[r]?cityNeed(c)*8:0;                      // keep ~8 ticks of food at home
+      const avail=(st[r]||0)-reserve; if(avail>bv){bv=avail;best=r;} }
+    if(!best)return null; const qty=Math.min(CARGO_CAP,Math.floor(bv*0.5));         // ship half the genuine surplus
     if(qty<=0)return null; st[best]-=qty; return {res:best,qty}; };
   const unloadCargo=(ci,cargo)=>{ if(!cargo)return; const c=cities[ci],st=c.stock||(c.stock={});
     const free=Math.max(0,cityCap(c)-cityUsed(c)), drop=Math.min(cargo.qty,free);  // no room -> rest spoils on the dock

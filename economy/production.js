@@ -41,12 +41,31 @@ const STORE={ warehouse:160, market:60, harbor:60,                      // dedic
   manor:30, townhouse:12, house:6, shack:3 };                              // dwellings: household pantry (besides housing residents)
 const STORE_DEFAULT=15;
 function buildStore(id){ return STORE[id]??STORE_DEFAULT; }
-// a town's capacity = every structure's own store: economy buildings AND dwellings.
+// a town's capacity = every WORKING structure's store: economy buildings AND dwellings.
+// A ruined (abandoned) building stores nothing.
 function cityCap(c){ let cap=0;
-  for(const b of (c.builds||[])) cap+=buildStore(b.id);
+  for(const b of (c.builds||[])) if(!b.ruined) cap+=buildStore(b.id);
   for(const h of (c.houses||[])) cap+=buildStore(h.btype);
   return cap; }
 function cityUsed(c){ let s=0; const st=c.stock||{}; for(const r in st) if(st[r]>0) s+=st[r]; return s; }
+
+// ---- people & food: every town eats; sustained famine empties buildings (they go ruined) ----
+const FOOD={ 'zboże':1, 'mąka':2.2, 'ryby':1.6 };   // nutrition per unit
+const FOOD_PER_CAP=0.004;                            // mouths to feed per head per tick
+const STARVE_LIMIT=12;                               // famine ticks before a building is abandoned
+const isFood=b=>{ const p=PROD[b.id]; return p&&p.out&&FOOD[p.out[0]]; };
+// gross food nutrition a town makes per tick (working food producers only)
+function cityFood(c){ let n=0; for(const b of (c.builds||[])){ if(b.ruined)continue; const p=PROD[b.id];
+  if(p&&p.out&&FOOD[p.out[0]]) n+=p.out[1]*FOOD[p.out[0]]; } return n; }
+function cityNeed(c){ return (c.pop||0)*FOOD_PER_CAP; }
+// eat from the stockpile (richest food first); returns true if the population was fully fed
+function feedCity(c){ const st=c.stock||{}; let need=cityNeed(c);
+  for(const r of ['mąka','ryby','zboże']){ if(need<=0)break; const have=st[r]||0; if(have<=0)continue;
+    const nutr=Math.min(need, have*FOOD[r]); st[r]=have-nutr/FOOD[r]; need-=nutr; }
+  return need<=1e-4; }
+// abandon one working building — a non-food one first, so the town can still feed itself a while
+function ruinOne(c){ const live=(c.builds||[]).filter(b=>!b.ruined); if(!live.length)return;
+  const t=live.find(b=>!isFood(b))||live[0]; t.ruined=true; }
 
 // accumulate production once per ECON_TICK; refiners consume their input first. Returns true on a tick.
 function tickEconomy(world,dt){
@@ -54,11 +73,15 @@ function tickEconomy(world,dt){
   world._acc=(world._acc||0)+dt; if(world._acc<ECON_TICK)return false; world._acc-=ECON_TICK;
   for(const c of world.cities){ const st=c.stock||(c.stock={});
     const cap=cityCap(c); let used=cityUsed(c);
-    for(const b of c.builds){ const p=PROD[b.id]; if(!p||!p.out)continue;
+    for(const b of c.builds){ if(b.ruined)continue; const p=PROD[b.id]; if(!p||!p.out)continue;
       if(p.in){ const[ir,iq]=p.in; if((st[ir]||0)<iq)continue; st[ir]-=iq; used-=iq; }   // refine only when fed (consuming frees space)
       const[or_,oq]=p.out; const space=cap-used; if(space<=0)continue;                    // warehouse full -> output spoils
-      const add=Math.min(oq,space); st[or_]=(st[or_]||0)+add; used+=add; } }
+      const add=Math.min(oq,space); st[or_]=(st[or_]||0)+add; used+=add; }
+    // everyone eats; sustained shortage thins the population and abandons a building
+    if(feedCity(c)) c.starv=Math.max(0,(c.starv||0)-1);
+    else { c.starv=(c.starv||0)+1; c.pop=Math.max(40,Math.round((c.pop||0)*0.997));
+      if(c.starv>=STARVE_LIMIT){ ruinOne(c); c.starv=Math.floor(STARVE_LIMIT/2); } } }
   return true;
 }
-// per-tick gross output of a town (resource -> rate), for the info panel.
-function cityOutputs(c){ const o={}; for(const b of c.builds){ const p=PROD[b.id]; if(p&&p.out) o[p.out[0]]=(o[p.out[0]]||0)+p.out[1]; } return o; }
+// per-tick gross output of a town (resource -> rate), for the info panel (working buildings only).
+function cityOutputs(c){ const o={}; for(const b of c.builds){ if(b.ruined)continue; const p=PROD[b.id]; if(p&&p.out) o[p.out[0]]=(o[p.out[0]]||0)+p.out[1]; } return o; }
