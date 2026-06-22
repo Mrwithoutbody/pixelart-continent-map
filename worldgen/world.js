@@ -337,22 +337,15 @@ function genWorld(seed){
           segs.push({x0:B.dock.x,y0:B.dock.y,x1:B.x,y1:B.y,mode:'sea'}); }}
     for(const s of segs)s.len=Math.hypot(s.x1-s.x0,s.y1-s.y0)||1;return segs;};
 
-  // ---- merchants: CAPITALISED traders. Each caravan owns a purse: it buys a good cheap at one town
-  // (paying that town), hauls it, sells it dearer elsewhere (the buyer town pays the caravan), and keeps
-  // the spread. A bad run drains the purse -> bankruptcy (removed). A random strategy biases what each
-  // one trades, so under the same world some caravans thrive and others die.
-  const valueAt=(ci,res)=>townPrice(cities[ci],res)*ECON.tradeVal;        // gold/unit at a town
-  const STRATS=[
-    {name:'spożywcza', goods:['jedzenie','zboże','ryby','sól','mięso']},  // staples: steady demand
-    {name:'surowcowa', goods:['drewno','kamień','ruda','futra']},         // bulk materials
-    {name:'luksusowa', goods:['metal','deski','towary','skóry']},         // high-value, thin/volatile
-    {name:'wszystko',  goods:null} ];                                     // opportunist
-  // caravan buys at town ci with ITS OWN gold (per strategy); returns cargo {res,qty,cost} or null
+  // ---- merchants: CAPITALISED traders, pure arbitrage. Each owns a purse: buys the cheapest (most
+  // abundant) good at one town, hauls it, sells it where it is dearest (scarcest), keeps the spread.
+  // No favoured goods, no quotas — the invisible hand. A bad run drains the purse -> bankruptcy.
+  const valueAt=(ci,res)=>townPrice(cities[ci],res);                      // gold/unit at a town (pure scarcity)
+  // caravan buys the town's biggest surplus (=cheapest) with its own gold; returns cargo {res,qty,cost} or null
   const buyAt=(ci,m)=>{ const c=cities[ci],tally={};
     for(const u of storesOf(c)) for(const r in u.stock) if(u.stock[r]>0) tally[r]=(tally[r]||0)+u.stock[r];
     let best=null,bv=4;
-    for(const r in tally){ if(m.strat.goods&&!m.strat.goods.includes(r))continue;
-      const reserve=(r===FOOD)?cityNeed(c)*ECON.foodReserve:0, avail=tally[r]-reserve; if(avail>bv){bv=avail;best=r;} }
+    for(const r in tally) if(tally[r]>bv){bv=tally[r];best=r;}
     if(!best)return null; const price=valueAt(ci,best); if(price<=0)return null;
     const qty=Math.min(ECON.cargoCap, Math.floor(bv*0.8), Math.floor(m.gold*0.85/price));
     if(qty<=0)return null; const cost=qty*price; townTake(c,best,qty); c.gold=(c.gold||0)+cost; m.gold-=cost;  // caravan pays the seller town
@@ -377,7 +370,6 @@ function genWorld(seed){
   let MID=0;
   const newMerchant=(home,gold,rand)=>{ const reach=reachableFrom(home); if(!reach.length)return null;
     const m={id:MID++,home,dest:home,f:cities[home].f,gold,profit:0,cargo:null,
-      strat:STRATS[(rand()*STRATS.length)|0],
       risk:0.004+rand()*0.012,   // distance toll/tile (avg ~0.01); random now, FUTURE: from the chronicles
       segs:[],si:0,t:0,speed:0.30+rand()*0.20};   // ~3x faster -> trips actually complete
     m.cargo=buyAt(home,m); const dest=destFor(home,reach,m.cargo,rand,m.risk),route=planRoute(home,dest);
@@ -409,7 +401,7 @@ function genWorld(seed){
   // sweep out bankrupt caravans (called once per economy tick)
   world.reap=()=>{ for(let i=merchants.length-1;i>=0;i--) if(merchants[i].dead) merchants.splice(i,1); };
   // who buys a good at a town, and at what unit price (the other side of the exchange) — for caravan UI
-  world.bestBuyer=(ci,res)=>{ const c=cities[ci]; let b=null,bp=0; for(const x of c.builds){ if(x.ruined)continue; const p=priceB(x,res); if(p>bp){bp=p;b=x;} } return {build:b,price:bp*ECON.tradeVal}; };
+  world.bestBuyer=(ci,res)=>{ const c=cities[ci]; let b=null,bp=0; for(const x of c.builds){ if(x.ruined)continue; const p=priceB(x,res); if(p>bp){bp=p;b=x;} } return {build:b,price:bp}; };
   // ---- terrain-model API for future units ----
   world.idx=(x,y)=>((y|0)*W+(x|0));
   world.inBounds=(x,y)=>x>=0&&y>=0&&x<W&&y<H;

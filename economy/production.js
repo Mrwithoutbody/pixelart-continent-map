@@ -12,7 +12,7 @@ const ECON={
   popShrink:0.003,       // pop loss/tick when starving — need falls with pop -> negative feedback, no death spiral
   popFloor:25,
   ruinLimit:200,         // ticks of sustained famine before a building is abandoned (long + recoverable)
-  cargoCap:100, tradeVal:6, foodReserve:10,  // caravan: load size (Colonization 100-unit), gold/price scale, food kept home
+  cargoCap:100,              // caravan load size (Colonization 100-unit)
   caravanCapital:120, caravanMinGold:8, caravanUpkeep:12,   // starting purse; running cost per trip; below min -> bankrupt
   buildEvery:40, buildReserve:50,           // autonomous town growth: try a build every N ticks if treasury > reserve
   caravanEvery:60, caravanGold:140, fleetPerTown:3,   // a rich market town spawns a caravan; fleet capped at fleetPerTown*towns
@@ -99,12 +99,12 @@ function townGive(c,res,qty,prefer){ let left=qty; const us=storesOf(c);
   for(const u of us){ if(left<=0)break; const free=unitCap(u)-unitUsed(u); if(free<=0)continue;
     const t=Math.min(free,left); u.stock[res]=(u.stock[res]||0)+t; left-=t; } return qty-left; }
 
-// ---- PRICES: every building quotes its own price from its own stock (pure exchange) ----
-function consumesRes(b,res){ return recipesOf(b.id).some(r=>r.in.some(x=>x[0]===res)); }
-function priceB(b,res){ const have=(b.stock&&b.stock[res])||0; let dem=consumesRes(b,res)?4:1; if(res===FOOD)dem+=1;
-  return dem/(1+have*0.12); }                                            // scarce + wanted = dear
-// the town's going price for a good = the keenest buyer's bid (the building that wants it most sets it)
-function townPrice(c,res){ let p=0.25; for(const b of (c.builds||[])) if(!b.ruined){ const q=priceB(b,res); if(q>p)p=q; } return p; }
+// ---- PRICES: pure supply & demand. No hand-tuned demand bumps, no favoured goods — price is ONLY
+// scarcity: gold/unit = PMAX/(1+stock·k). Demand is emergent: consumers eat stock -> stock falls ->
+// price rises by itself -> caravans bring more. The invisible hand, not regulation.
+const PMAX=22, PSCARCE=0.05;
+function priceB(b,res){ return PMAX/(1+(((b.stock&&b.stock[res])||0)*PSCARCE)); }   // a building's own scarcity (UI chips)
+function townPrice(c,res){ return PMAX/(1+townHas(c,res)*PSCARCE); }                 // the town's scarcity = its trade price
 
 // ---- build affordability (goods come from warehouses, 'złoto' from the treasury) ----
 function affordHave(c,r){ return r==='złoto'?(c.gold||0):townHas(c,r); }

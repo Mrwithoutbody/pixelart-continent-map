@@ -93,8 +93,7 @@ function caravanPanel(){ const m=selMerchant; if(!m||m.dead||!WORLD.merchants.in
   const mode=seg&&seg.mode==='sea'?'morzem':'lądem';
   const prof=Math.round(m.profit||0);
   const risk=m.risk<0.008?'śmiała':m.risk<0.013?'umiarkowana':'ostrożna';   // future: from chronicles
-  let body=`<div class="stat"><span>strategia</span><b>${m.strat?m.strat.name:'—'}</b></div>`
-    +`<div class="stat"><span>ryzyko</span><b>${risk}</b></div>`
+  let body=`<div class="stat"><span>ryzyko</span><b>${risk}</b></div>`
     +`<div class="stat"><span>kapitał</span><b>${Math.round(m.gold||0)} zł</b></div>`
     +`<div class="stat"><span>zysk</span><b style="color:${prof>=0?'var(--green)':'var(--red)'}">${prof>=0?'+':''}${prof} zł</b></div>`
     +`<div class="stat"><span>trasa</span><b>${mode} → ${dest?dest.name:'—'}</b></div>`;
