@@ -37,10 +37,15 @@ function missingFor(city,id){ const c=BUILD_COST[id]||{},m=[]; for(const r in c)
 const STORE={ warehouse:160, market:60, harbor:60,                      // dedicated / civic stores
   farm:25, lumber_camp:25, mine:25, quarry:25, fishery:25, salt_works:25,   // raw extractors: own buffer
   mill:30, sawmill:30, smelter:30,                                          // refiners: slightly bigger
-  tower:10, chapel:10 };
+  tower:10, chapel:10,                                                      // civic: token
+  manor:30, townhouse:12, house:6, shack:3 };                              // dwellings: household pantry (besides housing residents)
 const STORE_DEFAULT=15;
 function buildStore(id){ return STORE[id]??STORE_DEFAULT; }
-function cityCap(c){ let cap=0; for(const b of (c.builds||[])) cap+=buildStore(b.id); return cap; }
+// a town's capacity = every structure's own store: economy buildings AND dwellings.
+function cityCap(c){ let cap=0;
+  for(const b of (c.builds||[])) cap+=buildStore(b.id);
+  for(const h of (c.houses||[])) cap+=buildStore(h.btype);
+  return cap; }
 function cityUsed(c){ let s=0; const st=c.stock||{}; for(const r in st) if(st[r]>0) s+=st[r]; return s; }
 
 // accumulate production once per ECON_TICK; refiners consume their input first. Returns true on a tick.

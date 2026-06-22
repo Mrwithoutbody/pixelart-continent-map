@@ -85,7 +85,7 @@ function cityTab(c){ const f=FACTIONS[c.f];
   const guild=c.guild>=0?WORLD.guilds[c.guild]:null, faith=WORLD.faiths[c.faith];
   const comp={}; for(const h of c.houses) comp[h.btype]=(comp[h.btype]||0)+1;
   const resRows=['manor','townhouse','house','shack'].filter(k=>comp[k])
-    .map(k=>`<div class="li"><span>${RES_NAME[k]}</span><span>${comp[k]}</span></div>`).join('');
+    .map(k=>`<div class="li"><span>${RES_NAME[k]}</span><span>${comp[k]} <span class="dimn">+${comp[k]*buildStore(k)}</span></span></div>`).join('');
   return `<div class="fac"><span class="sw" style="background:${f.flag}"></span>Ród ${house?house.name:f.name}`
    +   (c.seat?` <span class="port">★ stolica</span>`:'')+(c.port?` <span class="port">⚓ port</span>`:'')+`</div>`
    + (house?`<div class="stat"><span>włada</span><b>${house.title} ${house.ruler.full}</b></div>`:'')
