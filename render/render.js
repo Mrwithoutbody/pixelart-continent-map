@@ -161,6 +161,12 @@ function drawLabels(){if(cam.zoom<3)return;ctx.font=`bold ${Math.max(9,cam.zoom*
     ctx.fillStyle=FACTIONS[c.f].flag;ctx.fillRect(x0+2,y0+2,sw-2,h-4);   // faction swatch at start
     ctx.fillStyle=PAL.labelEdge;ctx.strokeStyle=PAL.labelEdge;ctx.lineWidth=1;ctx.strokeRect(x0+2.5,y0+2.5,sw-3,h-5);
     ctx.fillStyle=PAL.text;ctx.fillText(c.name,x0+sw+4,sy+1);}}
+// anchor icons on every port town's dock (fixed screen size, not world-scaled)
+function drawPorts(){ if(cam.zoom<1.5)return; const s=SPR.anchor,IC=Math.max(2,Math.min(4,Math.round(cam.zoom*0.7))),vb=viewBounds();
+  for(const c of WORLD.cities){ if(!c.port||!c.dock)continue;
+    if(c.dock.x<vb.x0||c.dock.x>vb.x1||c.dock.y<vb.y0||c.dock.y>vb.y1)continue;
+    const[sx,sy]=w2s(c.dock.x,c.dock.y);
+    ctx.drawImage(s.img,0,0,s.sw,s.sh, Math.round(sx-s.sw*IC/2), Math.round(sy-s.sh*IC/2), s.sw*IC, s.sh*IC); } }
 function render(){
   ctx.imageSmoothingEnabled=false;
   ctx.fillStyle=PAL.deep;ctx.fillRect(0,0,cv.width,cv.height);
@@ -198,6 +204,7 @@ function render(){
     const r=Math.round((c.r+4)*cam.zoom), lw=Math.max(3,Math.round(cam.zoom*1.1));
     ctx.strokeStyle='#ffe066';ctx.lineWidth=lw;ctx.lineJoin='miter';ctx.setLineDash([]);
     ctx.strokeRect(Math.round(sx)-r, Math.round(sy)-r, r*2, r*2);}   // chunky square bracket, no rounding
+  drawPorts();
   drawLabels();
 }
 

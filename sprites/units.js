@@ -22,4 +22,17 @@ const UNIT_SPRITES={
     ".KhhhhK..",
     "..KKKK...",
   ]},
+  anchor:{pal:{K:OUTL,W:'#dde6ee'},oyBottom:false,rows:[          // port marker icon (centered)
+    "..KKK..",
+    ".KWWWK.",
+    ".KWKWK.",
+    ".KWWWK.",
+    "..KWK..",
+    "KKKWKKK",
+    "..KWK..",
+    "W.KWK.W",
+    "WKKWKKW",
+    ".WWKWW.",
+    "..KKK..",
+  ]},
 };

@@ -35,6 +35,6 @@ function buildSprites(){
   SPR.fields   =[bake(FIELD_SPRITES.green), bake(FIELD_SPRITES.wheat)];
   SPR.hills    =[makeHill(13), makeHill(17)];
   SPR.mountains=[makeMountain(16), makeMountain(20), makeMountain(26)];
-  // --- units ---
-  SPR.cart=bake(UNIT_SPRITES.cart); SPR.ship=bake(UNIT_SPRITES.ship);
+  // --- units + icons ---
+  SPR.cart=bake(UNIT_SPRITES.cart); SPR.ship=bake(UNIT_SPRITES.ship); SPR.anchor=bake(UNIT_SPRITES.anchor);
 }

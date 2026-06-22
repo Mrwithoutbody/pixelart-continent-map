@@ -1,5 +1,6 @@
 // CONFIG — world dimensions, palettes, factions, biomes, economy tables, tunables.
-const W = 1500, H = 940;                 // world size in tiles (bigger -> towns less cramped)
+const W = 1620, H = 1120;                // world size in tiles (extra room is open sea, esp. top/bottom)
+const SEA_MARGIN = 130;                  // forced ocean band along the top & bottom edges
 
 // ---------- tunables ----------
 const MAX_BRIDGE=7;                          // widest water span (tiles) a road bridge may cross

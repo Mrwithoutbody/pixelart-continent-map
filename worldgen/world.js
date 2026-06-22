@@ -77,6 +77,7 @@ function genWorld(seed){
     const d=Math.hypot(x-cx,y-cy)/maxR;
     const fall=smooth(0.86,1.28,d);
     h=clamp(h*1.15 - fall*fall*0.80, 0, 1);
+    const eY=Math.min(y,H-1-y); h*=smooth(0,SEA_MARGIN,eY);   // force open sea along top & bottom edges
     h=Math.pow(h,1.45);                 // redistribute: most land lowland, peaks rare
     height[i]=h;
     const m=fbm(nM,x/70,y/70,4); moist[i]=m;
