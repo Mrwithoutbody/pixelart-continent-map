@@ -32,6 +32,7 @@ function segCross(a,b,c,d){const s=(p,q,r)=>(q.x-p.x)*(r.y-p.y)-(q.y-p.y)*(r.x-p
 
 // ---------- tunables ----------
 const CITY_COUNT=28, CITY_MIN_DIST=42;       // target town count + min tiles between towns
+const MAX_BRIDGE=7;                          // widest water span (tiles) a road bridge may cross
 
 // ---------- biomes + terrain coefficients ----------
 const BIOME={DEEP:0,SHALLOW:1,BEACH:2,DESERT:3,GRASS:4,FOREST:5,HILLS:6,MOUNTAIN:7};
@@ -290,24 +291,38 @@ function genWorld(seed){
     fac[i]=bf;
   }
 
-  // ---- roads: land-only Euclidean MST (planar tree => connects every city, no crossings) ----
-  const crossesWater=(a,b)=>{const A=cities[a],B=cities[b],d=Math.hypot(B.x-A.x,B.y-A.y),n=Math.max(1,Math.round(d));
-    for(let i=0;i<=n;i++){const t=i/n,x=(A.x+(B.x-A.x)*t)|0,y=(A.y+(B.y-A.y)*t)|0;
-      if(biome[y*W+x]<=BIOME.SHALLOW) return true;} return false;};
-  const cand=[];
-  for(let a=0;a<cities.length;a++)for(let b=a+1;b<cities.length;b++)
-    if(!crossesWater(a,b)) cand.push([Math.hypot(cities[a].x-cities[b].x,cities[a].y-cities[b].y),a,b]);
+  // ---- roads: Euclidean MST over land, allowed to bridge narrow water ----
+  // waterSpans(a,b): sample the straight line; if every contiguous water run is short
+  // enough to bridge (<= MAX_BRIDGE), return its length + bridge spans, else null (uncrossable).
+  const nC=cities.length;
+  const waterSpans=(a,b)=>{const A=cities[a],B=cities[b],d=Math.hypot(B.x-A.x,B.y-A.y),n=Math.max(1,Math.round(d));
+    const spans=[]; let run=0,runStart=0,bridgeTiles=0;
+    const lineAt=t=>({x:A.x+(B.x-A.x)*t,y:A.y+(B.y-A.y)*t});
+    const closeRun=endI=>{ if(run*d/n>MAX_BRIDGE) return false;
+      const p0=lineAt(Math.max(0,runStart-1)/n), p1=lineAt(Math.min(n,endI)/n);
+      spans.push({x0:p0.x,y0:p0.y,x1:p1.x,y1:p1.y}); bridgeTiles+=run; run=0; return true; };
+    for(let i=0;i<=n;i++){const p=lineAt(i/n),x=p.x|0,y=p.y|0;
+      if(biome[y*W+x]<=BIOME.SHALLOW){ if(run===0)runStart=i; run++; }
+      else if(run>0 && !closeRun(i)) return null; }
+    if(run>0 && !closeRun(n)) return null;
+    return {d,bridgeTiles,spans};
+  };
+  const cand=[], spanMap=new Map();
+  for(let a=0;a<nC;a++)for(let b=a+1;b<nC;b++){ const ws=waterSpans(a,b); if(!ws)continue;
+    cand.push([ws.d+ws.bridgeTiles*6, a, b]);          // bridges add cost -> roads prefer dry land
+    if(ws.spans.length) spanMap.set(a*nC+b, ws.spans); }
   cand.sort((p,q)=>p[0]-q[0]);
   const par=cities.map((_,i)=>i), find=i=>{while(par[i]!==i){par[i]=par[par[i]];i=par[i];}return i;};
   const edges=[];
   const crosses=(a,b)=>edges.some(([p,q])=> p!==a&&p!==b&&q!==a&&q!==b && segCross(cities[a],cities[b],cities[p],cities[q]));
-  // Kruskal over distance-sorted cand. allowCross=false => planar tree (no crossings);
-  // allowCross=true 2nd pass only fires for components a planar edge couldn't join — same
-  // landmass (cand is water-filtered), shortest-first, so any crossing is rare + minimal.
+  // Kruskal over cost-sorted cand. allowCross=false => planar tree (no crossings);
+  // allowCross=true 2nd pass connects any leftovers (shortest-first => minimal crossing).
   const grow=allowCross=>{for(const[d,a,b]of cand){const ra=find(a),rb=find(b);
     if(ra!==rb && (allowCross||!crosses(a,b))){par[ra]=rb;edges.push([a,b]);}}};
   grow(false); grow(true);
   const adj=cities.map(()=>[]); for(const[a,b]of edges){adj[a].push(b);adj[b].push(a);}
+  // bridge decks = water spans of the chosen road edges
+  const bridges=[]; for(const[a,b]of edges){const s=spanMap.get(Math.min(a,b)*nC+Math.max(a,b)); if(s)for(const sp of s)bridges.push(sp);}
 
   // ---- decoration entities (consistent w/ biome) ----
   const trees=[], bushes=[], peaks=[], hills=[], rocks=[];
@@ -370,7 +385,7 @@ function genWorld(seed){
     const dest=reach[rng()*reach.length|0],route=planRoute(home,dest);if(!route||!route.length)continue;
     merchants.push({home,dest,f:rng()<0.5?cities[home].f:-1,segs:segmentsFor(route),si:0,t:rng(),speed:0.10+rng()*0.10});}
 
-  const world={seed,W,H,height,moist,biome,cost,fac,cities,edges,adj,cadj,merchants,trees,bushes,peaks,hills,rocks,fields,
+  const world={seed,W,H,height,moist,biome,cost,fac,cities,edges,adj,cadj,merchants,trees,bushes,peaks,hills,rocks,fields,bridges,
     bitmap:bakeTerrain(height,moist,biome,fac)};
   // runtime route replanning (called when a caravan reaches its destination)
   world.replan=m=>{const home=m.dest,reach=reachableFrom(home);
@@ -500,6 +515,19 @@ function drawRoads(){ctx.strokeStyle=PAL.road;ctx.lineWidth=Math.max(2,Math.roun
   for(const[a,b]of WORLD.edges){const[px,py]=w2s(WORLD.cities[a].x,WORLD.cities[a].y),
     [qx,qy]=w2s(WORLD.cities[b].x,WORLD.cities[b].y); ctx.moveTo(px,py);ctx.lineTo(qx,qy);}   // straight road A->B
   ctx.stroke();ctx.setLineDash([]);}
+// wooden bridge decks over the water spans of the road network (drawn under the road dashes)
+function drawBridges(){const z=cam.zoom; ctx.lineCap='butt';ctx.lineJoin='miter';ctx.setLineDash([]);
+  for(const br of WORLD.bridges){const[x0,y0]=w2s(br.x0,br.y0),[x1,y1]=w2s(br.x1,br.y1);
+    let nx=y1-y0,ny=-(x1-x0);const L=Math.hypot(nx,ny)||1; nx/=L;ny/=L;          // perpendicular unit
+    const rail=Math.max(2,z*1.3);
+    ctx.strokeStyle='#5e3f22';ctx.lineWidth=Math.max(4,z*2.6);                    // dark underside / piles
+    ctx.beginPath();ctx.moveTo(x0,y0);ctx.lineTo(x1,y1);ctx.stroke();
+    ctx.strokeStyle='#8a5e34';ctx.lineWidth=Math.max(3,z*2.0);                    // plank deck
+    ctx.beginPath();ctx.moveTo(x0,y0);ctx.lineTo(x1,y1);ctx.stroke();
+    ctx.strokeStyle='#3a2616';ctx.lineWidth=Math.max(1,z*0.5);                    // two side rails
+    for(const s of[1,-1]){const ox=nx*rail*s,oy=ny*rail*s;
+      ctx.beginPath();ctx.moveTo(x0+ox,y0+oy);ctx.lineTo(x1+ox,y1+oy);ctx.stroke();}
+  }}
 function drawLabels(){if(cam.zoom<3)return;ctx.font=`bold ${Math.max(9,cam.zoom*1.6)}px monospace`;ctx.textBaseline='middle';ctx.textAlign='left';
   const vb=viewBounds();
   for(const c of WORLD.cities){ if(c.x<vb.x0||c.x>vb.x1||c.y<vb.y0||c.y>vb.y1)continue;
@@ -517,6 +545,7 @@ function render(){
   ctx.drawImage(WORLD.bitmap,0,0,W,H,Math.round(ox),Math.round(oy),Math.ceil(W*cam.zoom),Math.ceil(H*cam.zoom));
   const vb=viewBounds();
   for(const f of WORLD.fields) if(f.x>=vb.x0&&f.x<=vb.x1&&f.y>=vb.y0&&f.y<=vb.y1) blit(f.spr,f.x,f.y,false); // flat ground, no shadow
+  drawBridges();   // wooden decks under the road dashes
   drawRoads();
   const ents=[];
   for(const p of WORLD.peaks) if(p.x>=vb.x0&&p.x<=vb.x1&&p.y>=vb.y0&&p.y<=vb.y1) ents.push(p);
