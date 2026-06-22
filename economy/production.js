@@ -32,14 +32,22 @@ function canAfford(city,id){ const c=BUILD_COST[id]||{}; for(const r in c) if(((
 function payCost(city,id){ const c=BUILD_COST[id]||{}; for(const r in c) city.stock[r]-=c[r]; }
 function missingFor(city,id){ const c=BUILD_COST[id]||{},m=[]; for(const r in c){ const have=(city.stock||{})[r]||0; if(have<c[r]) m.push(`${Math.ceil(c[r]-have)} ${r}`); } return m; }
 
+// ---- storage capacity: every town hoards up to cityCap(); surplus over it spoils ----
+const STORAGE_BASE=60, STORAGE_PER_WAREHOUSE=120;   // base granary + each Magazyn
+function cityCap(c){ let cap=STORAGE_BASE+Math.floor((c.pop||0)/20)+(c.seat?40:0);
+  for(const b of (c.builds||[])) if(b.id==='warehouse') cap+=STORAGE_PER_WAREHOUSE; return cap; }
+function cityUsed(c){ let s=0; const st=c.stock||{}; for(const r in st) if(st[r]>0) s+=st[r]; return s; }
+
 // accumulate production once per ECON_TICK; refiners consume their input first. Returns true on a tick.
 function tickEconomy(world,dt){
   if(!world)return false;
   world._acc=(world._acc||0)+dt; if(world._acc<ECON_TICK)return false; world._acc-=ECON_TICK;
   for(const c of world.cities){ const st=c.stock||(c.stock={});
+    const cap=cityCap(c); let used=cityUsed(c);
     for(const b of c.builds){ const p=PROD[b.id]; if(!p||!p.out)continue;
-      if(p.in){ const[ir,iq]=p.in; if((st[ir]||0)<iq)continue; st[ir]-=iq; }   // refine only when fed
-      const[or_,oq]=p.out; st[or_]=(st[or_]||0)+oq; } }
+      if(p.in){ const[ir,iq]=p.in; if((st[ir]||0)<iq)continue; st[ir]-=iq; used-=iq; }   // refine only when fed (consuming frees space)
+      const[or_,oq]=p.out; const space=cap-used; if(space<=0)continue;                    // warehouse full -> output spoils
+      const add=Math.min(oq,space); st[or_]=(st[or_]||0)+add; used+=add; } }
   return true;
 }
 // per-tick gross output of a town (resource -> rate), for the info panel.

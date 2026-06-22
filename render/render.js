@@ -108,6 +108,7 @@ function buildsTab(c){
 function buildingDetail(c,b){ const p=PROD[b.id]||{};
   return `<div class="li clk back" onclick="unpickBuild()"><span>‹ wszystkie budynki</span><span></span></div>`
    + `<div class="sect">${b.name}</div>`
+   + (b.id==='warehouse'?`<div class="stat"><span>pojemność</span><b>+${STORAGE_PER_WAREHOUSE} miejsca</b></div>`:'')
    + (p.in?`<div class="stat"><span>zużywa</span><b>−${p.in[1]} ${p.in[0]}/turę</b></div>`:'')
    + `<div class="stat"><span>produkuje</span><b>${p.out?`+${p.out[1]} ${p.out[0]}/turę`:'—'}</b></div>`
    + (p.in?`<div class="stat"><span>w magazynie</span><b>${Math.floor((c.stock||{})[p.in[0]]||0)} ${p.in[0]}</b></div>`:'')
@@ -121,8 +122,11 @@ function prodRows(c){
   const prod = ok.length ? ok.map(r=>`<div class="li eco"><span>${r}</span><span>+${out[r]}/turę</span></div>`).join('') : '';
   const st=c.stock||{}, sk=Object.keys(st).filter(r=>st[r]>0);
   const stock = sk.length ? sk.map(r=>`<div class="li"><span>${r}</span><span>${Math.floor(st[r])}</span></div>`).join('') : `<div class="li eco"><span>pusto</span><span></span></div>`;
+  const cap=cityCap(c), used=Math.floor(cityUsed(c)), pct=Math.min(100,Math.round(used/cap*100));
   return (prod?`<div class="sect">produkcja</div><div class="list">${prod}</div>`:'')
-       + `<div class="sect">skarbiec</div><div class="list">${stock}</div>`;
+       + `<div class="sect">skarbiec <span class="capn${pct>=90?' full':''}">${used}/${cap}</span></div>`
+       + `<div class="cap${pct>=90?' full':''}"><i style="width:${pct}%"></i></div>`
+       + `<div class="list">${stock}</div>`;
 }
 cv.addEventListener('wheel',e=>{e.preventDefault();const[wx,wy]=s2w(e.clientX,e.clientY);
   cam.zoom*=e.deltaY<0?1.12:1/1.12;clampCam();const[nx,ny]=s2w(e.clientX,e.clientY);cam.x+=wx-nx;cam.y+=wy-ny;clampCam();},{passive:false});
