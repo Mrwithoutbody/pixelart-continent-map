@@ -386,11 +386,14 @@ function genWorld(seed){
   // For now risk is random per caravan. FUTURE: it should be derived from the CHRONICLES that build
   // up during play (a route's history of bandit raids / losses / safe passages raises or lowers it).
   const destFor=(home,reach,cargo,rand,risk)=>{ if(!cargo) return reach[(rand()*reach.length)|0];   // empty -> wander
+    // goods already EN ROUTE to each town (so caravans don't all herd onto the same stale opportunity)
+    const inc={}; for(const mm of merchants){ if(mm.cargo && !mm.dead){ const k=mm.cargo.res+','+mm.dest; inc[k]=(inc[k]||0)+mm.cargo.qty; } }
     const hc=cities[home]; let best=null,bs=-1e9;
     for(const d of reach){ const t=cities[d];
       if(cityCap(t)-cityUsed(t)<=0) continue;             // skip towns with no room
       const dist=Math.hypot(t.x-hc.x,t.y-hc.y);
-      const val=valueAt(d,cargo.res);
+      const have=townHas(t,cargo.res)+(inc[cargo.res+','+d]||0);   // discount by what's already sailing there
+      const val=PMAX/(1+have*PSCARCE);
       const score=val-dist*risk+rand()*1.5; if(score>bs){bs=score;best=d;} }
     return best!=null?best:reach[(rand()*reach.length)|0]; };           // fallback: wander if nothing scored
   let MID=0;
