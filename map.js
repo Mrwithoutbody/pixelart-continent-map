@@ -292,25 +292,25 @@ function genWorld(seed){
   }
 
   // ---- roads: Euclidean MST over land, allowed to bridge narrow water ----
-  // waterSpans(a,b): sample the straight line; if every contiguous water run is short
+  // spanPts(ax,ay,bx,by): sample the straight line; if every contiguous water run is short
   // enough to bridge (<= MAX_BRIDGE), return its length + bridge spans, else null (uncrossable).
   const nC=cities.length;
-  const waterSpans=(a,b)=>{const A=cities[a],B=cities[b],d=Math.hypot(B.x-A.x,B.y-A.y),n=Math.max(1,Math.round(d));
+  const spanPts=(ax,ay,bx,by)=>{const d=Math.hypot(bx-ax,by-ay),n=Math.max(1,Math.round(d));
     const spans=[]; let run=0,runStart=0,bridgeTiles=0;
-    const lineAt=t=>({x:A.x+(B.x-A.x)*t,y:A.y+(B.y-A.y)*t});
+    const at=t=>({x:ax+(bx-ax)*t,y:ay+(by-ay)*t});
     const closeRun=endI=>{ if(run*d/n>MAX_BRIDGE) return false;
-      const p0=lineAt(Math.max(0,runStart-1)/n), p1=lineAt(Math.min(n,endI)/n);
+      const p0=at(Math.max(0,runStart-1)/n), p1=at(Math.min(n,endI)/n);
       spans.push({x0:p0.x,y0:p0.y,x1:p1.x,y1:p1.y}); bridgeTiles+=run; run=0; return true; };
-    for(let i=0;i<=n;i++){const p=lineAt(i/n),x=p.x|0,y=p.y|0;
+    for(let i=0;i<=n;i++){const p=at(i/n),x=p.x|0,y=p.y|0;
+      if(x<0||y<0||x>=W||y>=H){ if(run>0&&!closeRun(i))return null; continue; }
       if(biome[y*W+x]<=BIOME.SHALLOW){ if(run===0)runStart=i; run++; }
       else if(run>0 && !closeRun(i)) return null; }
     if(run>0 && !closeRun(n)) return null;
     return {d,bridgeTiles,spans};
   };
-  const cand=[], spanMap=new Map();
-  for(let a=0;a<nC;a++)for(let b=a+1;b<nC;b++){ const ws=waterSpans(a,b); if(!ws)continue;
-    cand.push([ws.d+ws.bridgeTiles*6, a, b]);          // bridges add cost -> roads prefer dry land
-    if(ws.spans.length) spanMap.set(a*nC+b, ws.spans); }
+  const cand=[];
+  for(let a=0;a<nC;a++)for(let b=a+1;b<nC;b++){ const ws=spanPts(cities[a].x,cities[a].y,cities[b].x,cities[b].y); if(!ws)continue;
+    cand.push([ws.d+ws.bridgeTiles*6, a, b]); }              // bridges add cost -> roads prefer dry land
   cand.sort((p,q)=>p[0]-q[0]);
   const par=cities.map((_,i)=>i), find=i=>{while(par[i]!==i){par[i]=par[par[i]];i=par[i];}return i;};
   const edges=[];
@@ -321,8 +321,44 @@ function genWorld(seed){
     if(ra!==rb && (allowCross||!crosses(a,b))){par[ra]=rb;edges.push([a,b]);}}};
   grow(false); grow(true);
   const adj=cities.map(()=>[]); for(const[a,b]of edges){adj[a].push(b);adj[b].push(a);}
-  // bridge decks = water spans of the chosen road edges
-  const bridges=[]; for(const[a,b]of edges){const s=spanMap.get(Math.min(a,b)*nC+Math.max(a,b)); if(s)for(const sp of s)bridges.push(sp);}
+
+  // ---- junctions: roads leaving a town in a similar direction merge into a trunk that
+  //      forks (a "Y") at a wayside node carrying a building (signpost / inn / watchtower).
+  //      Nodes 0..nC-1 are the cities; junctions are appended. The result stays a tree.
+  const NPOS=cities.map(c=>[c.x,c.y]);           // road-graph node positions
+  const Elist=edges.map(([a,b])=>[a,b]);         // mutable node-pair edges (start = city MST)
+  const junctions=[];
+  const isLandPt=(x,y)=>{x|=0;y|=0;return x>=0&&y>=0&&x<W&&y<H&&biome[y*W+x]>BIOME.SHALLOW;};
+  const JTYPE=[['signpost','Drogowskaz'],['inn','Zajazd'],['tower','Strażnica']];
+  for(let c=0;c<nC;c++){
+    const inc=[]; for(const e of Elist){ if(e[0]===c||e[1]===c){ const o=e[0]===c?e[1]:e[0];
+      inc.push({e,ang:Math.atan2(NPOS[o][1]-cities[c].y,NPOS[o][0]-cities[c].x),
+                dist:Math.hypot(NPOS[o][0]-cities[c].x,NPOS[o][1]-cities[c].y)}); } }
+    if(inc.length<2)continue;
+    inc.sort((p,q)=>p.ang-q.ang);
+    for(let i=0;i<inc.length;){ let j=i+1; while(j<inc.length && (inc[j].ang-inc[j-1].ang)<0.8) j++;
+      const group=inc.slice(i,j); i=j;
+      if(group.length<2)continue;                                       // need >=2 near-parallel roads
+      let mx=0,my=0; for(const g of group){mx+=Math.cos(g.ang);my+=Math.sin(g.ang);}
+      const ml=Math.hypot(mx,my)||1; mx/=ml; my/=ml;
+      const jd=Math.max(5,Math.min(18,Math.min(...group.map(g=>g.dist))*0.35));
+      const jx=cities[c].x+mx*jd, jy=cities[c].y+my*jd;
+      if(!isLandPt(jx,jy))continue;                                     // never strand a junction in water
+      const J=NPOS.length; NPOS.push([jx,jy]); Elist.push([c,J]);       // trunk: city -> junction
+      for(const g of group){ if(g.e[0]===c)g.e[0]=J; else g.e[1]=J; }   // branches now start at J
+      const[id,nm]=JTYPE[rng()<0.5?0:rng()<0.6?1:2];
+      junctions.push({x:jx,y:jy,spr:SPR[id],name:nm});
+    }
+  }
+  const redges=Elist;
+  const radj=NPOS.map(()=>[]); for(const[a,b]of Elist){radj[a].push(b);radj[b].push(a);}
+  // bridge decks = water spans of the actual road segments (city/junction node edges)
+  const bridges=[]; for(const[a,b]of Elist){const ws=spanPts(NPOS[a][0],NPOS[a][1],NPOS[b][0],NPOS[b][1]); if(ws)for(const sp of ws.spans)bridges.push(sp);}
+  // land path (node positions) between two city nodes, threaded through junctions (tree => unique)
+  const landPath=(u,v)=>{const prev=new Map([[u,-1]]),qq=[u];
+    while(qq.length){const n=qq.shift(); if(n===v)break; for(const w of radj[n]) if(!prev.has(w)){prev.set(w,n);qq.push(w);}}
+    if(!prev.has(v))return [NPOS[u],NPOS[v]];
+    const path=[];let cur=v;while(cur!==-1){path.unshift(NPOS[cur]);cur=prev.get(cur);}return path;};
 
   // ---- decoration entities (consistent w/ biome) ----
   const trees=[], bushes=[], peaks=[], hills=[], rocks=[];
@@ -373,7 +409,8 @@ function genWorld(seed){
     if(!prev.has(t))return null;const seq=[];let cur=t;
     while(prev.get(cur)){const p=prev.get(cur);seq.unshift({from:p.from,to:cur,mode:p.mode});cur=p.from;}return seq;};
   const segmentsFor=route=>{const segs=[];for(const e of route){const A=cities[e.from],B=cities[e.to];
-    if(e.mode==='land'){ segs.push({x0:A.x,y0:A.y,x1:B.x,y1:B.y,mode:'land'}); }   // straight land road A->B
+    if(e.mode==='land'){ const P=landPath(e.from,e.to);                       // follow the road through junctions
+      for(let i=0;i+1<P.length;i++) segs.push({x0:P[i][0],y0:P[i][1],x1:P[i+1][0],y1:P[i+1][1],mode:'land'}); }
     else{ segs.push({x0:A.x,y0:A.y,x1:A.dock.x,y1:A.dock.y,mode:'sea'});       // walk to dock, then sail, then to town
           segs.push({x0:A.dock.x,y0:A.dock.y,x1:B.dock.x,y1:B.dock.y,mode:'sea'});
           segs.push({x0:B.dock.x,y0:B.dock.y,x1:B.x,y1:B.y,mode:'sea'}); }}
@@ -386,7 +423,7 @@ function genWorld(seed){
     merchants.push({home,dest,f:rng()<0.5?cities[home].f:-1,segs:segmentsFor(route),si:0,t:rng(),speed:0.10+rng()*0.10});}
 
   const world={seed,W,H,height,moist,biome,cost,fac,cities,edges,adj,cadj,merchants,trees,bushes,peaks,hills,rocks,fields,bridges,
-    bitmap:bakeTerrain(height,moist,biome,fac)};
+    roadNodes:NPOS,redges,junctions,bitmap:bakeTerrain(height,moist,biome,fac)};
   // runtime route replanning (called when a caravan reaches its destination)
   world.replan=m=>{const home=m.dest,reach=reachableFrom(home);
     if(!reach.length){m.si=0;m.t=0;return;}
@@ -512,8 +549,8 @@ function blit(fr,wx,wy,shadow=true){const[sx,sy]=w2s(wx,wy),z=cam.zoom;
 function viewBounds(){const[x0,y0]=s2w(0,0),[x1,y1]=s2w(cv.width,cv.height);return{x0:x0-2,y0:y0-2,x1:x1+2,y1:y1+18};}
 function drawRoads(){ctx.strokeStyle=PAL.road;ctx.lineWidth=Math.max(2,Math.round(cam.zoom*1.1));
   ctx.lineCap='butt';ctx.lineJoin='miter';ctx.setLineDash([Math.round(cam.zoom*2),Math.round(cam.zoom*1.4)]);ctx.beginPath();
-  for(const[a,b]of WORLD.edges){const[px,py]=w2s(WORLD.cities[a].x,WORLD.cities[a].y),
-    [qx,qy]=w2s(WORLD.cities[b].x,WORLD.cities[b].y); ctx.moveTo(px,py);ctx.lineTo(qx,qy);}   // straight road A->B
+  for(const[a,b]of WORLD.redges){const[px,py]=w2s(WORLD.roadNodes[a][0],WORLD.roadNodes[a][1]),
+    [qx,qy]=w2s(WORLD.roadNodes[b][0],WORLD.roadNodes[b][1]); ctx.moveTo(px,py);ctx.lineTo(qx,qy);}   // node -> node (forks at junctions)
   ctx.stroke();ctx.setLineDash([]);}
 // wooden bridge decks over the water spans of the road network (drawn under the road dashes)
 function drawBridges(){const z=cam.zoom; ctx.lineCap='butt';ctx.lineJoin='miter';ctx.setLineDash([]);
@@ -557,6 +594,7 @@ function render(){
     for(const h of c.houses) if(h.x>=vb.x0&&h.x<=vb.x1&&h.y>=vb.y0&&h.y<=vb.y1) ents.push(h);
     for(const b of c.builds) if(b.x>=vb.x0&&b.x<=vb.x1&&b.y>=vb.y0&&b.y<=vb.y1) ents.push(b);
   }
+  for(const j of WORLD.junctions) if(j.x>=vb.x0&&j.x<=vb.x1&&j.y>=vb.y0&&j.y<=vb.y1) ents.push(j);  // wayside buildings
   ents.sort((a,b)=>a.y-b.y);
   for(const e of ents) blit(e.spr,e.x,e.y);
   for(const m of WORLD.merchants){ if(!m.segs.length)continue;
