@@ -47,7 +47,7 @@ const ROCK_SPRITES={
 // ---- crop fields (const grids) — flat ground patches, plowed vertical furrows.
 // drawn without a cast shadow (flat ground). soil 'd', crop rows 'C'/'c', edge 'K'.
 const FIELD_SPRITES={
-  green:{pal:{K:'#3a2a18',d:'#7a5a36',C:'#7fae3e',c:'#6c9a32'},rows:[
+  green:{pal:{K:'#63492c',d:'#7a5a36',C:'#7fae3e',c:'#6c9a32'},rows:[
     ".KKKKKKKKKKK.",
     "KdCdcdCdcdCK",
     "KdCdcdCdcdCK",
@@ -56,7 +56,7 @@ const FIELD_SPRITES={
     "KdCdcdCdcdCK",
     ".KKKKKKKKKKK.",
   ]},
-  wheat:{pal:{K:'#4a3416',d:'#8a6a3c',C:'#d9bb52',c:'#c2a23f'},rows:[
+  wheat:{pal:{K:'#74582f',d:'#8a6a3c',C:'#d9bb52',c:'#c2a23f'},rows:[
     ".KKKKKKKKK.",
     "KdCdcdCdCK",
     "KdCdcdCdCK",
