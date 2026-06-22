@@ -253,9 +253,7 @@ function loadGame(){ try{
   WORLD.layer=data.layer||'rody';
   document.querySelectorAll('.lyr').forEach(b=>b.classList.toggle('on',b.dataset.l===WORLD.layer));
   if(data.cam){ cam.x=data.cam.x; cam.y=data.cam.y; cam.zoom=data.cam.zoom; clampCam(); }
-  selected=null; updateInfo();
-  if(typeof renderChronicle==='function') renderChronicle();
-  return true;
+  return true;                                                        // regen() already reset selection/panel/chronicle
 }catch(e){ return false; } }
 
 buildSprites();
