@@ -70,9 +70,9 @@ const STORE={ warehouse:160, market:60, harbor:60,                      // dedic
   sawmill:30, smelter:30, piekarnia:30, garbarnia:30,                       // refiners: slightly bigger
   tower:10, chapel:10,                                                      // civic: token
   manor:30, townhouse:12, house:6, shack:3 };                              // dwellings: household pantry
-const STORE_DEFAULT=15;
+const STORE_DEFAULT=15, PORT_STORE=600;                                  // a port (anchor town) is a big harbour warehouse
 function buildStore(id){ return STORE[id]??STORE_DEFAULT; }
-function unitCap(u){ return buildStore(u.id||u.btype); }                 // building keys on .id, dwelling on .btype
+function unitCap(u){ return u.id==='__port'?PORT_STORE:buildStore(u.id||u.btype); }   // building keys on .id, dwelling on .btype
 function unitUsed(u){ let s=0; const st=u.stock; if(st)for(const r in st)if(st[r]>0)s+=st[r]; return s; }
 // every working warehouse unit in a town: economy buildings (not ruined) + dwellings.
 // Memoised per epoch — the unit LIST only changes when a building is built/ruined/demolished,
@@ -82,6 +82,7 @@ function invalidateStores(){ STORES_EPOCH++; }
 function storesOf(c){ if(c._se===STORES_EPOCH && c._stores) return c._stores;
   const a=[]; for(const b of (c.builds||[])) if(!b.ruined){ b.stock||(b.stock={}); a.push(b); }
   for(const h of (c.houses||[])) if(!h.ruined){ h.stock||(h.stock={}); a.push(h); }
+  if(c.port){ c.portStock||(c.portStock={}); a.push({id:'__port',stock:c.portStock}); }   // the big harbour warehouse
   c._stores=a; c._se=STORES_EPOCH; return a; }
 function townHas(c,res){ let s=0; for(const u of storesOf(c)) s+=(u.stock[res]||0); return s; }
 function cityCap(c){ let cap=0; for(const u of storesOf(c)) cap+=unitCap(u); return cap; }

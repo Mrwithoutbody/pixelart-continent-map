@@ -310,16 +310,14 @@ function genWorld(seed){
     for(let r=1;r<=5 && !c.dock;r++) for(let dy=-r;dy<=r && !c.dock;dy++) for(let dx=-r;dx<=r;dx++){
       const x=c.x+dx,y=c.y+dy; if(x<1||y<1||x>=W-1||y>=H-1)continue;
       if(isWater(y*W+x)){ c.port=true; c.dock={x,y}; break; } } }
-  const straightWater=(p,q)=>{const d=Math.hypot(q.x-p.x,q.y-p.y),n=Math.max(1,Math.round(d));
-    for(let i=0;i<=n;i++){const t=i/n,x=(p.x+(q.x-p.x)*t)|0,y=(p.y+(q.y-p.y)*t)|0;
-      if(!isWater(y*W+x)) return false;} return true;};                 // shortest sea lane = straight, all-water
+  if(typeof invalidateStores==='function') invalidateStores();   // ports now flagged -> rebuild stores so the harbour warehouse counts
   // combined graph: land roads + sea lanes between ports
   const cadj=cities.map(()=>[]);
   for(const[a,b]of edges){cadj[a].push({to:b,mode:'land'});cadj[b].push({to:a,mode:'land'});}
-  const ports=cities.map((_,i)=>i).filter(i=>cities[i].port);
-  for(let i=0;i<ports.length;i++)for(let j=i+1;j<ports.length;j++){const a=ports[i],b=ports[j];
-    if(Math.hypot(cities[a].x-cities[b].x,cities[a].y-cities[b].y)<260 && straightWater(cities[a].dock,cities[b].dock)){
-      cadj[a].push({to:b,mode:'sea'});cadj[b].push({to:a,mode:'sea'});}}
+  // sea lanes: each port links to its 2 nearest ports (a shipping network in the graph — not drawn on the map)
+  const ports=cities.map((_,i)=>i).filter(i=>cities[i].port), pd=(a,b)=>Math.hypot(cities[a].x-cities[b].x,cities[a].y-cities[b].y);
+  for(const a of ports){ const near=ports.filter(b=>b!==a).sort((x,y)=>pd(a,x)-pd(a,y)).slice(0,2);
+    for(const b of near) if(!cadj[a].some(e=>e.to===b&&e.mode==='sea')){ cadj[a].push({to:b,mode:'sea'}); cadj[b].push({to:a,mode:'sea'}); } }
 
   // ---- route planning (caravan: land legs as cart, sea legs as ship) ----
   const reachableFrom=h=>{const seen=new Set([h]),q=[h],out=[];while(q.length){const u=q.shift();
