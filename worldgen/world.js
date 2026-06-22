@@ -238,8 +238,10 @@ function genWorld(seed){
   for(const c of cities){
     c.name=townName(rng);
     const wealth=(c.score||siteScore(scan(c.x,c.y)));
-    const base = (c.seat?520:120) + wealth*9;
-    c.pop = Math.min(1200, Math.max(80, Math.round(base*(0.8+rng()*0.4))));
+    // skewed sizes: many small hamlets, few big towns (rng^2.5 biases hard toward small); seats stay large
+    const base = (c.seat?440:40) + wealth*6;
+    const skew = 0.22 + Math.pow(rng(),2.5)*2.1;        // heavy tail toward small
+    c.pop = Math.min(1200, Math.max(35, Math.round(base*skew)));
     const n=Math.max(1,Math.min(12,1+Math.round(c.pop/130)));
     c.houses=buildCluster(c.x,c.y,n,rng,biome);
     const tier=c.seat?'manor':c.pop>650?'townhouse':'house';
