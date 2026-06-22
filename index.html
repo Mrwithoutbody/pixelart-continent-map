@@ -119,9 +119,16 @@
   body.has-info #toMenu{right:262px}
 
   /* ============ CITY INFO PANEL ============ */
-  #info{position:fixed;top:12px;right:12px;z-index:12;width:238px;display:none;
+  #info{position:fixed;top:12px;right:12px;z-index:12;width:290px;display:none;
     font-size:12px;line-height:1.65;padding:0;overflow:hidden}
   body[data-screen="game"] #info.open{display:block}
+  #info .tabs{display:flex;gap:4px;padding:7px 10px 0;background:var(--panel2);margin:0 -3px}
+  #info .tab{cursor:pointer;font-size:11px;padding:5px 11px;color:var(--parch2);
+    border:2px solid var(--line);border-bottom:0;border-radius:3px 3px 0 0;background:#1a2212}
+  #info .tab.on{color:var(--gold);background:var(--panel);box-shadow:inset 0 2px 0 #ffffff22}
+  #info .li.clk{cursor:pointer;border-radius:2px;padding:2px 5px;margin:0 -5px}
+  #info .li.clk:hover{background:var(--panel2)}
+  #info .li.back{color:var(--green);margin-bottom:4px}
   #info .ihead{display:flex;align-items:center;gap:7px;background:var(--panel2);
     margin:-3px -3px 0;padding:10px 12px;border-bottom:3px solid var(--line)}
   #info .ihead .nm{font-family:var(--title);font-size:13px;color:var(--gold);
@@ -129,7 +136,7 @@
   #info .ihead .x{cursor:pointer;color:var(--parch2);font-weight:700;font-size:15px;
     padding:0 3px;line-height:1}
   #info .ihead .x:hover{color:var(--red)}
-  #info .ibody{padding:11px 13px}
+  #info .ibody{padding:11px 13px;max-height:calc(100vh - 110px);overflow-y:auto}
   #info .fac{display:flex;align-items:center;gap:6px;margin-bottom:8px}
   #info .sw{width:11px;height:11px;border:2px solid var(--line);display:inline-block}
   #info .stat{display:flex;justify-content:space-between;gap:10px;padding:2px 0;

@@ -21,11 +21,11 @@ addEventListener('mouseup',e=>{ if(downPos){const dx=e.clientX-downPos.x,dy=e.cl
 addEventListener('mousemove',e=>{if(!drag)return;cam.x=drag.cx-(e.clientX-drag.sx)/cam.zoom;cam.y=drag.cy-(e.clientY-drag.sy)/cam.zoom;clampCam();});
 
 // ---- selection + city / building info panel (GUI markup lives in index.html #info) ----
-let selected=null, selBuild=null, buildMode=null;   // city idx · {ci,b} building · build-type id
+let selected=null, selBuild=null, buildMode=null, infoTab='miasto';   // city idx · {ci,b} building · build-type id · panel tab
 const BIOME_NAME=['ocean','płycizna','plaża','pustynia','trawa','las','wzgórza','góry'];
 const RES_NAME={manor:'Dwór',townhouse:'Kamienica',house:'Dom',shack:'Chata'};
 const info=document.getElementById('info');
-function clearCity(){selected=null;selBuild=null;updateInfo();}    // panel close button
+function clearCity(){selected=null;selBuild=null;infoTab='miasto';updateInfo();}    // panel close button
 // enter/leave build mode (a building-type id to place on the next map click)
 function setBuild(id){ buildMode=id; document.body.classList.toggle('building',!!id);
   const bb=document.getElementById('buildbar'); if(bb)bb.classList.remove('open'); }
@@ -37,7 +37,7 @@ function pickAt(sx,sy){ if(!WORLD)return; const[wx,wy]=s2w(sx,sy);
   // nearest economy building under the cursor (a few tiles) -> select it
   let bb=null,bd=3.5,bci=-1;
   WORLD.cities.forEach((c,ci)=>{ for(const b of c.builds){ const d=Math.hypot(b.x-wx,b.y-wy); if(d<bd){bd=d;bb=b;bci=ci;} } });
-  if(bb){ selBuild={ci:bci,b:bb}; selected=bci; updateInfo(); return; }
+  if(bb){ selBuild={ci:bci,b:bb}; selected=bci; infoTab='budynki'; updateInfo(); return; }
   // else nearest town
   let best=null,cd=1e9; WORLD.cities.forEach((c,i)=>{const d=Math.hypot(c.x-wx,c.y-wy); if(d<c.r+3&&d<cd){cd=d;best=i;}});
   selected=best; selBuild=null; updateInfo();
@@ -56,41 +56,37 @@ function placeBuilding(wx,wy){ const x=Math.round(wx),y=Math.round(wy);
   const b=makeBuild(buildMode,x,y); c.builds.push(b);
   c.r=Math.max(c.r,Math.hypot(x-c.x,y-c.y)+1);
   flash(`zbudowano: ${b.name} (${c.name})`);
-  exitBuild(); selBuild={ci,b}; selected=ci; updateInfo(); saveGame();
+  exitBuild(); selBuild={ci,b}; selected=ci; infoTab='budynki'; updateInfo(); saveGame();
 }
 function demolishBuild(){ if(!selBuild)return; const c=WORLD.cities[selBuild.ci];
   const i=c.builds.indexOf(selBuild.b); if(i>=0)c.builds.splice(i,1); selBuild=null; updateInfo(); saveGame(); }
 
-// info panel for a single building
-function buildingInfo(){ const c=WORLD.cities[selBuild.ci], b=selBuild.b, p=PROD[b.id]||{};
+// ---- tab switch / building pick (inline onclick targets) ----
+function showTab(t){ infoTab=t; if(t==='miasto') selBuild=null; updateInfo(); }
+function pickBuild(bi){ const c=WORLD.cities[selected]; if(!c||!c.builds[bi])return;
+  selBuild={ci:selected,b:c.builds[bi]}; infoTab='budynki'; updateInfo(); }
+function unpickBuild(){ selBuild=null; updateInfo(); }
+
+// city panel: shared header + Miasto / Budynki tabs (building detail lives inside Budynki).
+function updateInfo(){
+  if(selected==null||!WORLD){info.classList.remove('open');document.body.classList.remove('has-info');return;}
+  const c=WORLD.cities[selected];
   info.innerHTML=
-    `<div class="ihead"><span class="nm">${b.name}</span><span class="x" onclick="clearCity()">✕</span></div>`
-   +`<div class="ibody">`
-   + `<div class="fac">${c.name} · Ród ${WORLD.houses.find(h=>h.f===c.f)?.name||''}</div>`
-   + (p.in?`<div class="stat"><span>zużywa</span><b>−${p.in[1]} ${p.in[0]}/turę</b></div>`:'')
-   + `<div class="stat"><span>produkuje</span><b>${p.out?`+${p.out[1]} ${p.out[0]}/turę`:'—'}</b></div>`
-   + (p.in?`<div class="stat"><span>w magazynie</span><b>${Math.floor((c.stock||{})[p.in[0]]||0)} ${p.in[0]}</b></div>`:'')
-   + `<div class="stat"><span>biom</span><b>${BIOME_NAME[WORLD.biomeAt(b.x,b.y)]}</b></div>`
-   + `<button class="btn sm ghost" style="margin-top:10px" onclick="demolishBuild()">✕ Rozbierz</button>`
-   +`</div>`;
+    `<div class="ihead"><span class="nm">${c.name}</span><span class="x" onclick="clearCity()">✕</span></div>`
+   +`<div class="tabs">`
+   + `<span class="tab${infoTab==='miasto'?' on':''}" onclick="showTab('miasto')">Miasto</span>`
+   + `<span class="tab${infoTab==='budynki'?' on':''}" onclick="showTab('budynki')">Budynki (${c.builds.length})</span>`
+   +`</div>`
+   +`<div class="ibody">`+(infoTab==='budynki'?buildsTab(c):cityTab(c))+`</div>`;
   info.classList.add('open');document.body.classList.add('has-info');
 }
-function updateInfo(){
-  if(selBuild){ buildingInfo(); return; }
-  if(selected==null||!WORLD){info.classList.remove('open');document.body.classList.remove('has-info');return;}
-  const c=WORLD.cities[selected],f=FACTIONS[c.f];
+function cityTab(c){ const f=FACTIONS[c.f];
   const house=WORLD.houses.find(h=>h.f===c.f);
   const guild=c.guild>=0?WORLD.guilds[c.guild]:null, faith=WORLD.faiths[c.faith];
   const comp={}; for(const h of c.houses) comp[h.btype]=(comp[h.btype]||0)+1;
   const resRows=['manor','townhouse','house','shack'].filter(k=>comp[k])
     .map(k=>`<div class="li"><span>${RES_NAME[k]}</span><span>${comp[k]}</span></div>`).join('');
-  const ecoRows=c.builds.length
-    ? c.builds.map(b=>`<div class="li eco"><span>${b.name}</span><span>·</span></div>`).join('')
-    : `<div class="li eco"><span>—</span><span></span></div>`;
-  info.innerHTML=
-    `<div class="ihead"><span class="nm">${c.name}</span><span class="x" onclick="clearCity()">✕</span></div>`
-   +`<div class="ibody">`
-   + `<div class="fac"><span class="sw" style="background:${f.flag}"></span>Ród ${house?house.name:f.name}`
+  return `<div class="fac"><span class="sw" style="background:${f.flag}"></span>Ród ${house?house.name:f.name}`
    +   (c.seat?` <span class="port">★ stolica</span>`:'')+(c.port?` <span class="port">⚓ port</span>`:'')+`</div>`
    + (house?`<div class="stat"><span>włada</span><b>${house.title} ${house.ruler.full}</b></div>`:'')
    + `<div class="stat"><span>populacja</span><b>${c.pop.toLocaleString('pl')}</b></div>`
@@ -99,11 +95,25 @@ function updateInfo(){
    + `<div class="stat"><span>wiara</span><b style="color:${faith?faith.color:'inherit'}">${faith?faith.name:'—'}</b></div>`
    + `<div class="stat"><span>biom</span><b>${BIOME_NAME[WORLD.biomeAt(c.x,c.y)]}</b></div>`
    + `<div class="stat"><span>drogi</span><b>${WORLD.adj[selected].length}</b></div>`
-   + `<div class="sect">mieszkalne (${c.houses.length})</div><div class="list">${resRows}</div>`
-   + `<div class="sect">gospodarka (${c.builds.length})</div><div class="list">${ecoRows}</div>`
-   + prodRows(c)
-   +`</div>`;
-  info.classList.add('open');document.body.classList.add('has-info');
+   + `<div class="sect">mieszkalne (${c.houses.length})</div><div class="list">${resRows}</div>`;
+}
+// Budynki tab: clicking a building drills into its detail (same panel); back link returns to the list.
+function buildsTab(c){
+  if(selBuild && selBuild.ci===selected) return buildingDetail(c,selBuild.b);
+  const list=c.builds.length
+    ? c.builds.map((b,i)=>`<div class="li eco clk" onclick="pickBuild(${i})"><span>${b.name}</span><span>›</span></div>`).join('')
+    : `<div class="li eco"><span>brak — zbuduj coś (🔨)</span><span></span></div>`;
+  return `<div class="sect">budynki (${c.builds.length})</div><div class="list">${list}</div>`+prodRows(c);
+}
+function buildingDetail(c,b){ const p=PROD[b.id]||{};
+  return `<div class="li clk back" onclick="unpickBuild()"><span>‹ wszystkie budynki</span><span></span></div>`
+   + `<div class="sect">${b.name}</div>`
+   + (p.in?`<div class="stat"><span>zużywa</span><b>−${p.in[1]} ${p.in[0]}/turę</b></div>`:'')
+   + `<div class="stat"><span>produkuje</span><b>${p.out?`+${p.out[1]} ${p.out[0]}/turę`:'—'}</b></div>`
+   + (p.in?`<div class="stat"><span>w magazynie</span><b>${Math.floor((c.stock||{})[p.in[0]]||0)} ${p.in[0]}</b></div>`:'')
+   + `<div class="stat"><span>biom</span><b>${BIOME_NAME[WORLD.biomeAt(b.x,b.y)]}</b></div>`
+   + `<div class="sect">akcje</div><div class="li eco"><span>zadania — wkrótce</span><span></span></div>`
+   + `<button class="btn sm ghost" style="margin-top:10px;width:100%" onclick="demolishBuild()">✕ Rozbierz</button>`;
 }
 // production + stockpile sections for a town
 function prodRows(c){
@@ -205,6 +215,9 @@ function render(){
     const r=Math.round((c.r+4)*cam.zoom), lw=Math.max(3,Math.round(cam.zoom*1.1));
     ctx.strokeStyle='#ffe066';ctx.lineWidth=lw;ctx.lineJoin='miter';ctx.setLineDash([]);
     ctx.strokeRect(Math.round(sx)-r, Math.round(sy)-r, r*2, r*2);}   // chunky square bracket, no rounding
+  if(selBuild){ const b=selBuild.b,[bx,by]=w2s(b.x,b.y),r=Math.max(6,2.2*cam.zoom),lw=Math.max(2,Math.round(cam.zoom*0.9));
+    ctx.strokeStyle='#ffe066';ctx.lineWidth=lw;ctx.lineJoin='miter';ctx.setLineDash([]);
+    ctx.strokeRect(Math.round(bx-r), Math.round(by-r*1.7), Math.round(r*2), Math.round(r*2)); }   // tight bracket on the picked building
   drawPorts();
   drawLabels();
 }
