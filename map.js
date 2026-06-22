@@ -190,8 +190,9 @@ function carveRivers(height,biome,cost,SL){
   // 3) per sizable lake: pick the shore tile with the cheapest route, carve it back to the sea.
   const MINSZ=5, SLh=SL-0.05;
   const dig=i=>{ if(biome[i]>BIOME.SHALLOW)biome[i]=BIOME.SHALLOW; if(height[i]>SLh)height[i]=SLh; cost[i]=COST[biome[i]]; };
-  const digWide=i=>{ const x=i%W,y=(i/W)|0; dig(i);                 // 2-wide: fill the diagonal gap
-    if(x<W-1)dig(i+1); if(y<H-1)dig(i+W); if(x<W-1&&y<H-1)dig(i+W+1); };
+  const digWide=i=>{ const x=i%W,y=(i/W)|0;                         // 3-wide: centered block
+    for(let dy=-1;dy<=1;dy++)for(let dx=-1;dx<=1;dx++){ const nx=x+dx,ny=y+dy;
+      if(nx>=0&&ny>=0&&nx<W&&ny<H)dig(ny*W+nx); } };
   const best=new Int32Array(nlab).fill(-1);
   for(let i=0;i<N;i++){ if(!isW(i)||label[i]===ocean)continue; const L=label[i]; if(size[L]<MINSZ)continue;
     const x=i%W,y=(i/W)|0;
