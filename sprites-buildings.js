@@ -1,0 +1,127 @@
+// ============================================================
+//  SPRITES / BUILDINGS  — houses + characteristic landmarks.
+//  Pure const grid data. Baked by core's buildSprites(). Needs OUTL (core).
+// ============================================================
+
+// residential palette (example2/4/5 vibe): brown peaked roofs, red or tan walls, windows, door
+const RPAL={K:OUTL,R:'#5e3a24',W:'#a8442f',T:'#c9b187',B:'#6e4a2c',O:'#9bb6c6',D:OUTL};
+// landmark palette: stone walls, slate, windows
+const SPAL={K:OUTL,S:'#9a948a',s:'#7c766c',R:'#5e3a24',O:'#9bb6c6',D:OUTL,W:'#e8e2d0'};
+
+const BUILDING_SPRITES={
+  // ---- residential ----
+  house:{pal:RPAL,rows:[                 // Dom: red walls, brown peaked roof, windows (~11x10)
+    "...KKKKK...",
+    "..KRRRRRK..",
+    ".KRRRRRRRK.",
+    "KKRRRRRRRKK",
+    "KKKKKKKKKKK",
+    ".KWOWWWOWK.",
+    ".KWWWWWWWK.",
+    ".KWWDDDWWK.",
+    ".KWWDDDWWK.",
+    ".KKKKKKKKK.",
+  ]},
+  cottage:{pal:RPAL,rows:[               // Dom (wariant): tan walls, simple (~9x8)
+    "..KKKKK..",
+    ".KBBBBBK.",
+    ".KKKKKKK.",
+    ".KTTTTTK.",
+    ".KTOTOTK.",
+    ".KTTDTTK.",
+    ".KTTDTTK.",
+    ".KKKKKKK.",
+  ]},
+  townhouse:{pal:RPAL,rows:[             // Kamienica: taller, two storeys of windows (~11x12)
+    "...KKKKK...",
+    "..KRRRRRK..",
+    ".KRRRRRRRK.",
+    "KKKKKKKKKKK",
+    ".KWWWWWWWK.",
+    ".KWOWWWOWK.",
+    ".KWWWWWWWK.",
+    ".KWOWWWOWK.",
+    ".KWWWWWWWK.",
+    ".KWWDDDWWK.",
+    ".KWWDDDWWK.",
+    ".KKKKKKKKK.",
+  ]},
+  manor:{pal:RPAL,rows:[                 // Dwór: wide, central gable + wings, many windows (~13x12)
+    ".....KKK.....",
+    "....KRRRK....",
+    "...KRRRRRK...",
+    "..KKKKKKKKK..",
+    ".KRRRRRRRRRK.",
+    "KKKKKKKKKKKKK",
+    ".KWOWOWOWOWK.",
+    ".KWWWWWWWWWK.",
+    ".KWWWWWWWWWK.",
+    ".KWWWWDWWWWK.",
+    ".KWWWWDWWWWK.",
+    ".KKKKKKKKKKK.",
+  ]},
+  hut:{pal:{K:OUTL,A:'#cf7a4a',C:'#5a1c1c',H:'#bda85a',E:'#3a230f'},rows:[  // ~6x6 filler house
+    ".KKKK.",
+    "KAAAAK",
+    "KCCCCK",
+    "KHHHHK",
+    "KHEEHK",
+    "KKKKKK",
+  ]},
+  workshop:{pal:{K:OUTL,A:'#62737d',C:'#42515a',H:'#9a948a',E:'#3a230f'},rows:[ // slate roof + chimney
+    "..K......",
+    "..K......",
+    "..KKKKK..",
+    ".KAAAAAK.",
+    ".KCCCCCK.",
+    ".KKKKKKK.",
+    ".KHHHHHK.",
+    ".KHHEHHK.",
+    ".KKKKKKK.",
+  ]},
+  // ---- characteristic landmarks ----
+  chapel:{pal:SPAL,rows:[               // Kaplica: steep roof + bell gable + cross
+    "....K....",
+    "...KKK...",
+    "....K....",
+    "...KRK...",
+    "..KRRRK..",
+    ".KRRRRRK.",
+    "KKKKKKKKK",
+    ".KSSSSSK.",
+    ".KSOOOSK.",
+    ".KSSSSSK.",
+    ".KSSDSSK.",
+    ".KKKKKKK.",
+  ]},
+  tower:{pal:SPAL,rows:[                // Wieża: tall keep w/ battlements
+    "K.K.K.K",
+    "KKKKKKK",
+    "KSSSSSK",
+    "KSOOOSK",
+    "KSSSSSK",
+    "KSSSSSK",
+    "KSOOOSK",
+    "KSSSSSK",
+    "KSSDSSK",
+    "KKKKKKK",
+  ]},
+  windmill:{pal:SPAL,rows:[             // Wiatrak: conical body + sail cross
+    "K...K",
+    ".K.K.",
+    "..W..",
+    ".K.K.",
+    "K.KsK",
+    ".KSSK",
+    ".KSSK",
+    "KSSSSK",
+    "KKKKKK",
+  ]},
+  market:{pal:{K:OUTL,a:'#a8442f',W:'#e8e2d0',g:'#5fbf3f',y:'#e0c040',r:'#d83030',p:'#a84fd0'},rows:[ // Targ
+    ".KKKKKKK.",
+    ".KaWaWaK.",
+    ".KKKKKKK.",
+    ".KgyrpgK.",
+    ".K.K.K.K.",
+  ]},
+};

@@ -2,9 +2,10 @@
 //  PIXELART CONTINENT MAP  —  engine
 //  Real terrain model (height/moisture/biome/move-cost), not just pixels.
 //  Continent w/ ocean + coastline. Factions = Voronoi over CITIES.
-//  Sprites: MiniWorldSprites (CC0). Camera zoom/pan. Merchants walk road graph.
+//  Hand-drawn pixel sprites (sprites-core/buildings/terrain/units.js). Camera zoom/pan. Caravans: carts on roads,
+//  ships on sea lanes between ports. Click a city for its make-up + economy.
 // ============================================================
-const W = 1240, H = 780;                 // world size in tiles (bigger -> towns less cramped)
+const W = 1500, H = 940;                 // world size in tiles (bigger -> towns less cramped)
 const cv = document.getElementById('cv');
 const ctx = cv.getContext('2d');
 function fit(){ cv.width = innerWidth; cv.height = innerHeight; ctx.imageSmoothingEnabled = false; }
@@ -24,6 +25,13 @@ function makeNoise(seed){
 function fbm(n,x,y,oct=5){let a=0,amp=0.5,f=1,norm=0;for(let o=0;o<oct;o++){a+=amp*n(x*f,y*f);norm+=amp;f*=2;amp*=0.5;}return a/norm;}
 const clamp=(v,a,b)=>v<a?a:v>b?b:v;
 const smooth=(e0,e1,x)=>{const t=clamp((x-e0)/(e1-e0),0,1);return t*t*(3-2*t);};
+// proper segment crossing (strict; shared endpoints / collinear touching don't count)
+function segCross(a,b,c,d){const s=(p,q,r)=>(q.x-p.x)*(r.y-p.y)-(q.y-p.y)*(r.x-p.x);
+  const d1=s(c,d,a),d2=s(c,d,b),d3=s(a,b,c),d4=s(a,b,d);
+  return ((d1>0)!==(d2>0))&&((d3>0)!==(d4>0));}
+
+// ---------- tunables ----------
+const CITY_COUNT=28, CITY_MIN_DIST=42;       // target town count + min tiles between towns
 
 // ---------- biomes + terrain coefficients ----------
 const BIOME={DEEP:0,SHALLOW:1,BEACH:2,DESERT:3,GRASS:4,FOREST:5,HILLS:6,MOUNTAIN:7};
@@ -39,7 +47,7 @@ const PAL={
   forest:'#5f7438', forestDk:'#516229',
   hill:'#9a9266', hillDk:'#85794f',
   rock:'#b8a784', rockDk:'#a8966f', snow:'#e7ecec',                  // warm tan massif (matches mountains)
-  road:'#2c2c24', cart:'#b9852f',
+  road:'#2c2c24',
   label:'#efe7cf', labelEdge:'#33302a', text:'#2a2620',
 };
 // factions: house-sheet color key, territory tint, border color
@@ -58,7 +66,9 @@ const BLD={
   quarry:{name:'Kamieniołom'}, fishery:{name:'Przystań'}, salt_works:{name:'Warzelnia'},
   mill:{name:'Młyn'}, sawmill:{name:'Tartak'}, smelter:{name:'Huta'},
   warehouse:{name:'Magazyn'}, market:{name:'Targ'}, harbor:{name:'Port'},
+  chapel:{name:'Kaplica'}, tower:{name:'Wieża'},
 };
+const ECON_SPR={mill:'windmill', market:'market', chapel:'chapel', tower:'tower'}; // id -> distinctive sprite (else workshop)
 
 
 // ============================================================
@@ -70,16 +80,16 @@ function townName(rng){let n=2+(rng()*2|0),s='';for(let i=0;i<n;i++)s+=SYL[rng()
 
 // scatter n houses around a town center on passable land (town = cluster, like example5)
 function buildCluster(cx,cy,n,rng,biome){
-  const houses=[{x:cx,y:cy,spr:SPR.house}];
+  const houses=[{x:cx,y:cy,small:false}];                               // centre = main building
   const pass=(x,y)=>x>=0&&y>=0&&x<W&&y<H&&PASSABLE[biome[y*W+x]];
-  let R=3.5,att=0;
-  while(houses.length<n && att<n*80){att++;
-    const a=rng()*6.2832, rad=2.6+rng()*R;
+  let R=5,att=0;
+  while(houses.length<n && att<n*90){att++;
+    const a=rng()*6.2832, rad=4+rng()*R;
     const x=Math.round(cx+Math.cos(a)*rad), y=Math.round(cy+Math.sin(a)*rad*0.8);
     if(!pass(x,y)) continue;
-    if(houses.some(h=>Math.abs(h.x-x)<4&&Math.abs(h.y-y)<4)) continue;   // wider spacing
-    houses.push({x,y,spr:rng()<0.45?SPR.house:SPR.hut});
-    if(houses.length%2===0) R+=1.2;
+    if(houses.some(h=>Math.abs(h.x-x)<6&&Math.abs(h.y-y)<6)) continue;   // wider spacing
+    houses.push({x,y,small:rng()<0.45});                                // small = shack filler
+    if(houses.length%2===0) R+=1.6;
   }
   return houses;
 }
@@ -102,17 +112,20 @@ function cityEconomy(c,biome){
   if(cnt.D>TH)out.push('salt_works');
   out.push('warehouse'); if(c.pop>900)out.push('market'); if(cnt.W>6)out.push('harbor');
   const cap=Math.max(2,Math.min(out.length,2+Math.round(c.pop/450)));   // bigger town = more
-  return out.slice(0,cap);
+  const res=out.slice(0,cap);
+  if(c.pop>1500) res.push('chapel');                                    // landmarks always show
+  if(c.pop>2500||cnt.W>6) res.push('tower');
+  return res;
 }
 function placeEconomy(c,biome,rng){
   const placed=[];
   for(const id of cityEconomy(c,biome)){ let put=null;
-    for(let k=0;k<50 && !put;k++){const a=rng()*6.2832,rad=4+rng()*6;
+    for(let k=0;k<60 && !put;k++){const a=rng()*6.2832,rad=5+rng()*9;
       const x=Math.round(c.x+Math.cos(a)*rad),y=Math.round(c.y+Math.sin(a)*rad*0.8);
       if(!(x>=0&&y>=0&&x<W&&y<H&&PASSABLE[biome[y*W+x]]))continue;
-      if(c.houses.concat(placed).some(b=>Math.abs(b.x-x)<3&&Math.abs(b.y-y)<3))continue;
+      if(c.houses.concat(placed).some(b=>Math.abs(b.x-x)<5&&Math.abs(b.y-y)<5))continue;
       put={x,y}; }
-    if(put)placed.push({x:put.x,y:put.y,spr:SPR.workshop,id,name:BLD[id].name}); }
+    if(put)placed.push({x:put.x,y:put.y,spr:SPR[ECON_SPR[id]]||SPR.workshop,id,name:BLD[id].name}); }
   return placed;
 }
 function genWorld(seed){
@@ -154,10 +167,10 @@ function genWorld(seed){
   // ---- cities on buildable land (grass/beach/desert), min spacing ----
   const cities=[]; let tries=0;
   const buildable=i=>{const b=biome[i];return b===BIOME.GRASS||b===BIOME.BEACH||b===BIOME.DESERT;};
-  while(cities.length<28 && tries<8000){tries++;
+  while(cities.length<CITY_COUNT && tries<20000){tries++;
     const x=8+rng()*(W-16)|0, y=8+rng()*(H-16)|0, i=y*W+x;
     if(!buildable(i)) continue;
-    if(cities.every(c=>Math.hypot(c.x-x,c.y-y)>26)) cities.push({x,y});
+    if(cities.every(c=>Math.hypot(c.x-x,c.y-y)>CITY_MIN_DIST)) cities.push({x,y});
   }
   // ---- assign factions: F capitals spread out, others join nearest capital ----
   const F=Math.min(FACTIONS.length,cities.length);
@@ -178,7 +191,9 @@ function genWorld(seed){
     c.houses=buildCluster(c.x,c.y,n,rng,biome);
     // residential composition: centre = best tier the population affords, rest = dom/chata
     const tier=c.pop>2200?'manor':c.pop>1100?'townhouse':'house';
-    c.houses.forEach((h,i)=>{ h.btype = i===0?tier : (h.spr===SPR.hut?'shack':'house'); });
+    c.houses.forEach((h,i)=>{ h.btype = i===0?tier : (h.small?'shack':'house');
+      h.spr = h.btype==='shack'?SPR.hut : h.btype==='manor'?SPR.manor
+            : h.btype==='townhouse'?SPR.townhouse : (((h.x+h.y)&1)?SPR.house:SPR.cottage); });
     c.builds=placeEconomy(c,biome,rng);                        // economy buildings on the outskirts
     const all=c.houses.concat(c.builds);
     c.r=all.reduce((m,h)=>Math.max(m,Math.hypot(h.x-c.x,h.y-c.y)),1.5);
@@ -194,21 +209,23 @@ function genWorld(seed){
     fac[i]=bf;
   }
 
-  // ---- roads: land only (no water crossing) -> spanning forest per landmass (Kruskal) ----
+  // ---- roads: land-only Euclidean MST (planar tree => connects every city, no crossings) ----
   const crossesWater=(a,b)=>{const A=cities[a],B=cities[b],d=Math.hypot(B.x-A.x,B.y-A.y),n=Math.max(1,Math.round(d));
     for(let i=0;i<=n;i++){const t=i/n,x=(A.x+(B.x-A.x)*t)|0,y=(A.y+(B.y-A.y)*t)|0;
-      if(biome[y*W+x]<=BIOME.SHALLOW) return true;}            // touches water -> invalid
-    return false;};
+      if(biome[y*W+x]<=BIOME.SHALLOW) return true;} return false;};
   const cand=[];
-  for(let a=0;a<cities.length;a++)for(let b=a+1;b<cities.length;b++){
-    if(!crossesWater(a,b)) cand.push([Math.hypot(cities[a].x-cities[b].x,cities[a].y-cities[b].y),a,b]);}
+  for(let a=0;a<cities.length;a++)for(let b=a+1;b<cities.length;b++)
+    if(!crossesWater(a,b)) cand.push([Math.hypot(cities[a].x-cities[b].x,cities[a].y-cities[b].y),a,b]);
   cand.sort((p,q)=>p[0]-q[0]);
   const par=cities.map((_,i)=>i), find=i=>{while(par[i]!==i){par[i]=par[par[i]];i=par[i];}return i;};
   const edges=[];
-  for(const[d,a,b]of cand){const ra=find(a),rb=find(b); if(ra!==rb){par[ra]=rb;edges.push([a,b]);}} // MST forest
-  let extra=0;                                                  // a few short loop links within land
-  for(const[d,a,b]of cand){ if(extra>=cities.length/5)break;
-    if(d<70 && !edges.some(([p,q])=>(p===a&&q===b)||(p===b&&q===a))){edges.push([a,b]);extra++;}}
+  const crosses=(a,b)=>edges.some(([p,q])=> p!==a&&p!==b&&q!==a&&q!==b && segCross(cities[a],cities[b],cities[p],cities[q]));
+  // Kruskal over distance-sorted cand. allowCross=false => planar tree (no crossings);
+  // allowCross=true 2nd pass only fires for components a planar edge couldn't join — same
+  // landmass (cand is water-filtered), shortest-first, so any crossing is rare + minimal.
+  const grow=allowCross=>{for(const[d,a,b]of cand){const ra=find(a),rb=find(b);
+    if(ra!==rb && (allowCross||!crosses(a,b))){par[ra]=rb;edges.push([a,b]);}}};
+  grow(false); grow(true);
   const adj=cities.map(()=>[]); for(const[a,b]of edges){adj[a].push(b);adj[b].push(a);}
 
   // ---- decoration entities (consistent w/ biome) ----
@@ -219,15 +236,15 @@ function genWorld(seed){
   for(let y=1;y<H-1;y++)for(let x=1;x<W-1;x++){
     const i=y*W+x, b=biome[i];
     const det=nD(x/3,y/3);
-    if(b===BIOME.FOREST && rng()<0.017+det*0.019) trees.push({x:x+rng()*0.6-0.3,y});
-    else if(b===BIOME.GRASS && rng()<0.0042) trees.push({x,y});
-    else if(b===M && rng()<0.018) peaks.push({x,y});
+    if(b===BIOME.FOREST && rng()<0.0117+det*0.013) trees.push({x:x+rng()*0.6-0.3,y});
+    else if(b===BIOME.GRASS && rng()<0.0029) trees.push({x,y});
+    else if(b===M && rng()<0.0124) peaks.push({x,y});
     else if(b===BIOME.HILLS){
-      if(nearMt(i)){ if(rng()<0.06) rocks.push({x,y}); }      // foot of mountains -> pebbles
-      else if(rng()<0.0072) hills.push({x,y});                // standalone foothills -> rounded knolls (sparse)
+      if(nearMt(i)){ if(rng()<0.041) rocks.push({x,y}); }     // foot of mountains -> pebbles
+      else if(rng()<0.005) hills.push({x,y});                 // standalone foothills -> rounded knolls (sparse)
     }
     // bushes scattered on grass + forest floor
-    else if((b===BIOME.GRASS||b===BIOME.FOREST) && rng()<0.006) bushes.push({x,y});
+    else if((b===BIOME.GRASS||b===BIOME.FOREST) && rng()<0.0041) bushes.push({x,y});
   }
   for(const t of trees) t.spr=SPR.trees[(t.y*7+(t.x|0))%SPR.trees.length];
   for(const bsh of bushes) bsh.spr=SPR.bushes[(bsh.x+bsh.y)%SPR.bushes.length];
@@ -260,7 +277,7 @@ function genWorld(seed){
     if(!prev.has(t))return null;const seq=[];let cur=t;
     while(prev.get(cur)){const p=prev.get(cur);seq.unshift({from:p.from,to:cur,mode:p.mode});cur=p.from;}return seq;};
   const segmentsFor=route=>{const segs=[];for(const e of route){const A=cities[e.from],B=cities[e.to];
-    if(e.mode==='land'){segs.push({x0:A.x,y0:A.y,x1:B.x,y1:B.y,mode:'land'});}
+    if(e.mode==='land'){ segs.push({x0:A.x,y0:A.y,x1:B.x,y1:B.y,mode:'land'}); }   // straight land road A->B
     else{ segs.push({x0:A.x,y0:A.y,x1:A.dock.x,y1:A.dock.y,mode:'sea'});       // walk to dock, then sail, then to town
           segs.push({x0:A.dock.x,y0:A.dock.y,x1:B.dock.x,y1:B.dock.y,mode:'sea'});
           segs.push({x0:B.dock.x,y0:B.dock.y,x1:B.x,y1:B.y,mode:'sea'}); }}
@@ -391,10 +408,10 @@ function blit(fr,wx,wy,shadow=true){const[sx,sy]=w2s(wx,wy),z=cam.zoom;
   }
   ctx.drawImage(fr.img,fr.sx,fr.sy,fr.sw,fr.sh,Math.round(sx-fr.ox*z),Math.round(sy-fr.oy*z),Math.ceil(fr.sw*z),Math.ceil(fr.sh*z));}
 function viewBounds(){const[x0,y0]=s2w(0,0),[x1,y1]=s2w(cv.width,cv.height);return{x0:x0-2,y0:y0-2,x1:x1+2,y1:y1+18};}
-function drawRoads(){ctx.strokeStyle=PAL.road;ctx.lineWidth=Math.max(1,cam.zoom*0.55);
-  ctx.setLineDash([cam.zoom*1.4,cam.zoom*1.1]);ctx.lineCap='round';ctx.beginPath();
-  for(const[a,b]of WORLD.edges){const A=WORLD.cities[a],B=WORLD.cities[b];
-    const[ax,ay]=w2s(A.x,A.y),[bx,by]=w2s(B.x,B.y);ctx.moveTo(ax,ay);ctx.lineTo(bx,by);}
+function drawRoads(){ctx.strokeStyle=PAL.road;ctx.lineWidth=Math.max(1,cam.zoom*0.6);
+  ctx.lineCap='round';ctx.lineJoin='round';ctx.setLineDash([cam.zoom*1.5,cam.zoom*1.1]);ctx.beginPath();
+  for(const[a,b]of WORLD.edges){const[px,py]=w2s(WORLD.cities[a].x,WORLD.cities[a].y),
+    [qx,qy]=w2s(WORLD.cities[b].x,WORLD.cities[b].y); ctx.moveTo(px,py);ctx.lineTo(qx,qy);}   // straight road A->B
   ctx.stroke();ctx.setLineDash([]);}
 function drawLabels(){if(cam.zoom<3)return;ctx.font=`bold ${Math.max(9,cam.zoom*1.6)}px monospace`;ctx.textBaseline='middle';ctx.textAlign='left';
   const vb=viewBounds();
@@ -436,7 +453,7 @@ function render(){
       ctx.fillStyle=FACTIONS[m.f].flag; ctx.fillRect(Math.round(sx),top,Math.ceil(z*2),Math.ceil(z*1.5));
     }}
   if(selected!=null){const c=WORLD.cities[selected];const[sx,sy]=w2s(c.x,c.y);
-    ctx.strokeStyle='#ffe66d';ctx.lineWidth=2;ctx.setLineDash([6,4]);
+    ctx.strokeStyle='rgba(255,230,109,0.45)';ctx.lineWidth=2;ctx.setLineDash([6,4]);
     ctx.beginPath();ctx.arc(sx,sy,(c.r+3)*cam.zoom,0,6.2832);ctx.stroke();ctx.setLineDash([]);}
   drawLabels();
 }
@@ -457,3 +474,4 @@ function regen(seed){WORLD=genWorld(typeof seed==='number'?seed:(Math.random()*1
   const el=document.getElementById('seed');if(el)el.textContent=WORLD.seed;}
 addEventListener('keydown',e=>{if(e.key==='r'||e.key==='R')regen();});
 buildSprites(); regen(12345); requestAnimationFrame(tick);
+if(location.search.includes("sel")){let bi=0;WORLD.cities.forEach((c,i)=>{if(c.pop>WORLD.cities[bi].pop)bi=i;});selected=bi;const c=WORLD.cities[bi];cam.x=c.x;cam.y=c.y;cam.zoom=9;clampCam();updateInfo();}

@@ -1,20 +1,15 @@
-<!DOCTYPE html><html><head><meta charset="utf-8"><style>
-body{margin:0;background:#88a548;}canvas{image-rendering:pixelated;display:block}
-</style></head><body>
-<canvas id="t" width="560" height="360"></canvas>
-<script src="sprites.js"></script>
-<script>
-buildSprites();
-const ctx=document.getElementById('t').getContext('2d');ctx.imageSmoothingEnabled=false;
-const Z=6; let x=10;
-function draw(s,label,gx,gy){ const z=Z;
-  ctx.drawImage(s.img,0,0,s.sw,s.sh, gx, gy-s.sh*z, s.sw*z, s.sh*z); }
-let gx=20;
-for(const m of SPR.mountains){ draw(m,'',gx,200); gx+=m.sw*Z+12; }
-gx=20;
-for(const h of SPR.hills){ draw(h,'',gx,300); gx+=h.sw*Z+12; }
-for(const t of SPR.trees){ draw(t,'',gx,300); gx+=t.sw*Z+12; }
-for(const b of SPR.bushes){ draw(b,'',gx,300); gx+=b.sw*Z+12; }
-draw(SPR.house,'',gx,300); gx+=SPR.house.sw*Z+12;
-draw(SPR.rocks[0],'',gx,300);
+<!DOCTYPE html><html><head><meta charset="utf-8"><style>body{margin:0;background:#88a548}canvas{image-rendering:pixelated}</style></head><body>
+<canvas id="t" width="1200" height="320"></canvas>
+<script src="sprites-core.js"></script><script src="sprites-buildings.js"></script><script src="sprites-terrain.js"></script><script src="sprites-units.js"></script><script>
+buildSprites();const ctx=document.getElementById('t').getContext('2d');ctx.imageSmoothingEnabled=false;const Z=6;
+// every sprite category on one sheet — buildings, terrain (incl. procedural pine/hill/mountain), units.
+// each row baseline-aligned so anchor/oy regressions show up immediately.
+const rows=[
+  [SPR.hut,SPR.cottage,SPR.house,SPR.townhouse,SPR.manor,SPR.workshop,SPR.chapel,SPR.tower,SPR.windmill,SPR.market],
+  [...SPR.trees,...SPR.bushes,...SPR.rocks],
+  [...SPR.hills,...SPR.mountains,SPR.cart,SPR.ship],
+];
+let gy=10;for(const row of rows){let gx=20;const base=gy+Math.max(...row.map(s=>s.sh))*Z;
+  for(const s of row){ctx.drawImage(s.img,0,0,s.sw,s.sh,gx,base-s.sh*Z,s.sw*Z,s.sh*Z);gx+=s.sw*Z+14;}
+  gy=base+18;}
 </script></body></html>
