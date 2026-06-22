@@ -260,7 +260,7 @@ function genWorld(seed){
     const all=c.houses.concat(c.builds);
     c.r=all.reduce((m,h)=>Math.max(m,Math.hypot(h.x-c.x,h.y-c.y)),1.5);
     c.minY=all.reduce((m,h)=>Math.min(m,h.y),c.y);
-    c.gold = Math.round(120 + c.pop/8);                                          // town treasury (also funds its caravans)
+    c.gold = Math.round(120 + c.pop/5);                                          // town treasury (also funds its caravans; markets afford 2)
     townGive(c,'sól',60); townGive(c,'jedzenie',40);   // ONLY a survival buffer (food+salt); all other goods must be produced or traded for
   }
 
@@ -386,7 +386,8 @@ function genWorld(seed){
   // its own gold. The starting fleet size therefore emerges from town wealth, not a fixed number.
   const merchants=[];
   for(let i=0;i<cities.length;i++){ let n=0;
-    while(n<ECON.caravansPerTown && cities[i].gold>=ECON.caravanCapital){
+    const want = cities[i].builds.some(b=>b.id==='market'&&!b.ruined) ? 2 : 1;   // a market town fields 2 caravans, others 1
+    while(n<want && cities[i].gold>=ECON.caravanCapital){
       const m=newMerchant(i, ECON.caravanCapital, rng); if(!m)break;
       cities[i].gold-=ECON.caravanCapital; m.t=rng(); merchants.push(m); n++; } }
 

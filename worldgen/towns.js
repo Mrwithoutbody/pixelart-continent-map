@@ -40,9 +40,10 @@ function cityEconomy(c,biome){
   if(cnt.M>TH)out.push('mine','smelter');
   if(cnt.H>TH)out.push('quarry');
   if(cnt.D>TH)out.push('salt_works');
-  out.push('warehouse'); if(c.pop>600)out.push('market'); if(cnt.W>6)out.push('harbor');
+  out.push('warehouse'); if(cnt.W>6)out.push('harbor');
   const cap=Math.max(2,Math.min(out.length,2+Math.round(c.pop/220)));   // bigger town = more
   const res=out.slice(0,cap);
+  if(c.pop>300) res.push('market');                                     // most real towns get a market (trade hub -> caravans)
   if(c.seat) res.push('chapel');                                        // a seat anchors a chapel
   if(c.seat&&(cnt.M>10||c.pop>1000)) res.push('tower');                 // ...and a watchtower if strong
   return res;
