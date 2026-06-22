@@ -36,21 +36,23 @@ addEventListener('keydown',e=>{ if(e.key==='Escape'){exitBuild();clearCity();} }
 function caravanPos(m){ const s=m.segs[Math.min(m.si,m.segs.length-1)]; return [s.x0+(s.x1-s.x0)*m.t, s.y0+(s.y1-s.y0)*m.t, s]; }
 function pickAt(sx,sy){ if(!WORLD)return; const[wx,wy]=s2w(sx,sy);
   if(buildMode){ placeBuilding(wx,wy); return; }
-  // caravan under the cursor? (they sit on top)
-  let mm=null,mdist=3; for(const m of WORLD.merchants){ if(!m.segs.length)continue;
-    const[mx,my]=caravanPos(m); const d=Math.hypot(mx-wx,my-wy); if(d<mdist){mdist=d;mm=m;} }
+  // caravan under the cursor? bigger hotspot, shifted up to the cart body (not the ground point)
+  let mm=null,mdist=5; for(const m of WORLD.merchants){ if(m.dead||!m.segs.length)continue;
+    const[mx,my]=caravanPos(m); const d=Math.hypot(mx-wx,(my-1.5)-wy); if(d<mdist){mdist=d;mm=m;} }
   if(mm){ selMerchant=mm; selected=null; selBuild=null; selHouse=null; updateInfo(); return; }
-  // economy building?
-  let bb=null,bd=3.5,bci=-1;
-  WORLD.cities.forEach((c,ci)=>{ for(const b of c.builds){ const d=Math.hypot(b.x-wx,b.y-wy); if(d<bd){bd=d;bb=b;bci=ci;} } });
-  if(bb){ selBuild={ci:bci,b:bb}; selected=bci; selHouse=null; selMerchant=null; infoTab='budynki'; updateInfo(); return; }
-  // dwelling?
-  let hh=null,hd=3,hci=-1;
-  WORLD.cities.forEach((c,ci)=>{ for(const h of c.houses){ const d=Math.hypot(h.x-wx,h.y-wy); if(d<hd){hd=d;hh=h;hci=ci;} } });
-  if(hh){ selHouse={ci:hci,h:hh}; selected=hci; selBuild=null; selMerchant=null; updateInfo(); return; }
-  // else nearest town
-  let best=null,cd=1e9; WORLD.cities.forEach((c,i)=>{const d=Math.hypot(c.x-wx,c.y-wy); if(d<c.r+3&&d<cd){cd=d;best=i;}});
-  selected=best; selBuild=null; selHouse=null; selMerchant=null; updateInfo();
+  selMerchant=null;
+  // what's under the cursor: nearest building, dwelling, town
+  let bb=null,bd=3.5,bci=-1; WORLD.cities.forEach((c,ci)=>{ for(const b of c.builds){ const d=Math.hypot(b.x-wx,b.y-wy); if(d<bd){bd=d;bb=b;bci=ci;} } });
+  let hh=null,hd=3,hci=-1;  WORLD.cities.forEach((c,ci)=>{ for(const h of c.houses){ const d=Math.hypot(h.x-wx,h.y-wy); if(d<hd){hd=d;hh=h;hci=ci;} } });
+  let nc=null,cd=1e9;       WORLD.cities.forEach((c,i)=>{ const d=Math.hypot(c.x-wx,c.y-wy); if(d<c.r+3&&d<cd){cd=d;nc=i;} });
+  const ci = bb?bci : hh?hci : nc;
+  if(ci==null){ clearCity(); return; }                                         // clicked empty land
+  if(ci!==selected){ selected=ci; selBuild=null; selHouse=null; updateInfo(); return; }   // 1st click on a town -> select the CITY
+  // city already selected -> 2nd click drills into a building/dwelling; clicking the selected one toggles it off
+  if(bb){ selBuild=(selBuild&&selBuild.b===bb)?null:{ci:bci,b:bb}; selHouse=null; if(selBuild)infoTab='budynki'; }
+  else if(hh){ selHouse=(selHouse&&selHouse.h===hh)?null:{ci:hci,h:hh}; selBuild=null; }
+  else { selBuild=null; selHouse=null; }                                        // empty spot in the selected city -> clear sub-selection
+  updateInfo();
 }
 function flash(msg){ const t=document.getElementById('toast'); if(!t)return;
   t.textContent=msg; t.classList.add('show'); clearTimeout(flash._t); flash._t=setTimeout(()=>t.classList.remove('show'),1600); }
@@ -352,9 +354,10 @@ function render(){
   if(framed){ const[bx,by]=w2s(framed.x,framed.y),r=Math.max(6,2.2*cam.zoom),lw=Math.max(2,Math.round(cam.zoom*0.9));
     ctx.strokeStyle='#ffe066';ctx.lineWidth=lw;ctx.lineJoin='miter';ctx.setLineDash([]);
     ctx.strokeRect(Math.round(bx-r), Math.round(by-r*1.7), Math.round(r*2), Math.round(r*2)); }   // tight bracket on picked building/house
-  if(selMerchant&&selMerchant.segs.length){ const[mx,my]=caravanPos(selMerchant), [px,py]=w2s(mx,my), r=Math.max(7,cam.zoom*2.6);
-    ctx.strokeStyle='#ffe066';ctx.lineWidth=Math.max(2,cam.zoom*0.8);ctx.setLineDash([]);
-    ctx.strokeRect(Math.round(px-r),Math.round(py-r),Math.round(r*2),Math.round(r*2)); }   // bracket on the picked caravan
+  if(selMerchant&&selMerchant.segs.length){ const[mx,my]=caravanPos(selMerchant), [px,py]=w2s(mx,my),
+      r=Math.max(11,cam.zoom*3.6), cy=Math.round(py-cam.zoom*1.3);   // bigger, raised to the cart body
+    ctx.strokeStyle='#ffe066';ctx.lineWidth=Math.max(2,cam.zoom*0.9);ctx.setLineDash([]);
+    ctx.strokeRect(Math.round(px-r),cy-r,Math.round(r*2),Math.round(r*2)); }   // bracket on the picked caravan
   if(WORLD.layer==='ceny') drawPriceLayer();
   drawPorts();
   drawLabels();
