@@ -42,18 +42,18 @@ function recipesOf(id){ const p=PROD[id]; if(!p)return[];
 // build / rebuild cost — paid in materials from the town's warehouses. One scheme: drewno + kamień
 // everywhere, plus metal ("stal") for specialist buildings. No money: construction is materials.
 const BUILD_COST={
-  // dwellings (also the rebuild cost when a house is abandoned)
-  shack:{drewno:4},                house:{drewno:8,'kamień':3},
-  townhouse:{drewno:14,'kamień':8}, manor:{drewno:24,'kamień':16},
-  // raw producers — mostly wood
-  farm:{drewno:8,'kamień':2},      lumber_camp:{drewno:6},
-  fishery:{drewno:8,'kamień':2},   hunter:{drewno:6},
-  quarry:{drewno:8},               mine:{drewno:10,'kamień':4},   salt_works:{drewno:8,'kamień':4},
-  // refiners + civic — wood + stone, metal for the advanced ones
-  piekarnia:{drewno:12,'kamień':8}, sawmill:{drewno:12,'kamień':4}, garbarnia:{drewno:10,'kamień':4},
-  smelter:{drewno:10,'kamień':12,'metal':4},  market:{drewno:14,'kamień':12,'metal':2},
-  warehouse:{drewno:10,'kamień':6}, harbor:{drewno:14,'kamień':8,'metal':2},
-  chapel:{drewno:12,'kamień':10},   tower:{drewno:14,'kamień':20,'metal':6},
+  // dwellings — EXPENSIVE wood + stone (a home is a big investment, paid from the town treasury)
+  shack:{drewno:12,'kamień':4},    house:{drewno:30,'kamień':20},
+  townhouse:{drewno:60,'kamień':40}, manor:{drewno:120,'kamień':80},
+  // raw producers — wood + a little stone
+  farm:{drewno:10,'kamień':4},     lumber_camp:{drewno:8},
+  fishery:{drewno:10,'kamień':4},  hunter:{drewno:8},
+  quarry:{drewno:10},              mine:{drewno:12,'kamień':6},   salt_works:{drewno:10,'kamień':6},
+  // workshops — wood + stone + STAL (steel/metal)
+  piekarnia:{drewno:16,'kamień':10,'metal':3}, sawmill:{drewno:16,'kamień':8,'metal':3}, garbarnia:{drewno:14,'kamień':8,'metal':3},
+  smelter:{drewno:14,'kamień':14,'metal':4},  market:{drewno:18,'kamień':14,'metal':4},
+  warehouse:{drewno:14,'kamień':10}, harbor:{drewno:18,'kamień':10,'metal':4},
+  chapel:{drewno:16,'kamień':14},   tower:{drewno:18,'kamień':24,'metal':8},
 };
 const BUILDABLE=['farm','piekarnia','hunter','garbarnia','lumber_camp','mine','quarry','fishery','salt_works','sawmill','smelter','market','warehouse','tower']
   .map(id=>({id, name:(BLD[id]||{name:id}).name, cost:BUILD_COST[id]||{}}));
@@ -125,6 +125,10 @@ function ruinHouse(c){ const live=(c.houses||[]).filter(h=>!h.ruined); if(live.l
 function cityFood(c){ let n=0; for(const b of (c.builds||[])){ if(b.ruined)continue;
   for(const r of recipesOf(b.id)) if(r.out[0]===FOOD){ n+=r.out[1]; break; } } return n; }
 function cityNeed(c){ return (c.pop||0)*ECON.foodPerCap; }
+// jobs: each working economy building employs people. Town's workforce demand = sum.
+const WORKERS={ farm:40,fishery:40,hunter:40,lumber_camp:40,quarry:40,salt_works:40,mine:50,
+  sawmill:50,piekarnia:50,garbarnia:50,smelter:60,market:60,harbor:50, warehouse:20,chapel:10,tower:10 };
+function cityJobs(c){ let n=0; for(const b of (c.builds||[])) if(!b.ruined) n+=WORKERS[b.id]||30; return n; }
 function feedCity(c){ const need=cityNeed(c), got=townTake(c,FOOD,need); return got>=need-1e-4; }
 // abandon one building when famine is chronic: spare the food chain, hand its goods to the rest of town
 function ruinOne(c){ const t=(c.builds||[]).find(b=>!b.ruined&&!feedsTown(b));   // only ever abandon a NON food-chain building
@@ -148,7 +152,8 @@ function chooseBuild(c){ const k=c.kinds||{};
     if(inputAround && cntB(c,'piekarnia')<2 && cityFood(c)<cityNeed(c)*0.7) return 'piekarnia';  // 2nd bakery if still short
   }
   // 2) HOUSING: prosperous (fed) town near its housing ceiling -> room for more people
-  if((c.starv||0)===0 && (c.pop||0) >= housingCap(c)) return '__house';   // only when genuinely full, not at 85%
+  // build homes only when there's WORK without housing for it (workers to house) — not for mere overcrowding
+  if((c.starv||0)===0 && cityJobs(c) > housingCap(c) && (c.pop||0) >= housingCap(c)) return '__house';
   // 3) VALUE-ADD: a raw piling up with no refiner the land can support
   if(k.F>14 && townHas(c,'drewno')>40 && !has(c,'sawmill')) return 'sawmill';
   if(k.F>14 && townHas(c,'futra')>20  && !has(c,'garbarnia')) return 'garbarnia';

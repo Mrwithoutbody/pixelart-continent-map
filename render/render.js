@@ -153,6 +153,9 @@ function cityTab(c){ const f=FACTIONS[c.f];
    +   (c.seat?` <span class="port">★ stolica</span>`:'')+(c.port?` <span class="port">⚓ port</span>`:'')+`</div>`
    + (house?`<div class="stat"><span>włada</span><b>${house.title} ${house.ruler.full}</b></div>`:'')
    + `<div class="stat"><span>populacja</span><b>${c.pop.toLocaleString('pl')}</b></div>`
+   + (()=>{ const jobs=cityJobs(c), un=Math.max(0,Math.round(c.pop-jobs)), rate=c.pop?Math.round(un/c.pop*100):0;
+       return `<div class="stat"><span>miejsca pracy</span><b>${jobs}</b></div>`
+        +`<div class="stat"><span>bezrobocie</span><b style="color:${rate>=25?'var(--red)':'inherit'}">${un} (${rate}%)</b></div>`; })()
    + `<div class="stat"><span>skarb</span><b>${Math.floor(c.gold||0)} złota</b></div>`
    + foodStat(c)
    + `<div class="stat"><span>gospodarka</span><b>${c.role||'—'}</b></div>`
