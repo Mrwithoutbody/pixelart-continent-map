@@ -131,8 +131,8 @@ function cityFood(c){ let n=0; for(const b of (c.builds||[])){ if(b.ruined)conti
 function cityNeed(c){ return (c.pop||0)*ECON.foodPerCap; }
 function feedCity(c){ const need=cityNeed(c), got=townTake(c,FOOD,need); return got>=need-1e-4; }
 // abandon one building when famine is chronic: spare the food chain, hand its goods to the rest of town
-function ruinOne(c){ const live=(c.builds||[]).filter(b=>!b.ruined); if(!live.length)return;
-  const t=live.find(b=>!feedsTown(b))||live.find(b=>!isFood(b))||live[0];
+function ruinOne(c){ const t=(c.builds||[]).find(b=>!b.ruined&&!feedsTown(b));   // only ever abandon a NON food-chain building
+  if(!t)return;                                                                  // all that's left feeds the town -> spare it, let pop shrink
   const s=t.stock||{}; t.ruined=true; invalidateStores();
   for(const r in s){ if(s[r]>0) townGive(c,r,s[r]); }  t.stock={}; }              // redistribute, don't vaporise
 
