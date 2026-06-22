@@ -70,7 +70,7 @@ const costStr=id=>{ const c=BUILD_COST[id]||{},k=Object.keys(c); return k.length
 // The town's stockpile is the sum of these. 'złoto' is the town treasury (c.gold), not a warehoused good.
 const STORE={ warehouse:160, market:60, harbor:60,                      // dedicated / civic stores
   farm:25, lumber_camp:25, mine:25, quarry:25, fishery:25, salt_works:25, hunter:25,   // raw extractors: own buffer
-  mill:30, sawmill:30, smelter:30, piekarnia:30, garbarnia:30,              // refiners: slightly bigger
+  sawmill:30, smelter:30, piekarnia:30, garbarnia:30,                       // refiners: slightly bigger
   tower:10, chapel:10,                                                      // civic: token
   manor:30, townhouse:12, house:6, shack:3 };                              // dwellings: household pantry
 const STORE_DEFAULT=15;

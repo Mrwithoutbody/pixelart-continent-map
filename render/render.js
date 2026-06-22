@@ -32,12 +32,13 @@ function setBuild(id){ buildMode=id; document.body.classList.toggle('building',!
 function exitBuild(){ setBuild(null); }
 addEventListener('keydown',e=>{ if(e.key==='Escape'){exitBuild();clearCity();} });
 
+// a caravan's current world position (one source of truth; clamped so a finished seg can't read undefined)
+function caravanPos(m){ const s=m.segs[Math.min(m.si,m.segs.length-1)]; return [s.x0+(s.x1-s.x0)*m.t, s.y0+(s.y1-s.y0)*m.t, s]; }
 function pickAt(sx,sy){ if(!WORLD)return; const[wx,wy]=s2w(sx,sy);
   if(buildMode){ placeBuilding(wx,wy); return; }
   // caravan under the cursor? (they sit on top)
   let mm=null,mdist=3; for(const m of WORLD.merchants){ if(!m.segs.length)continue;
-    const s=m.segs[Math.min(m.si,m.segs.length-1)], mx=s.x0+(s.x1-s.x0)*m.t, my=s.y0+(s.y1-s.y0)*m.t;
-    const d=Math.hypot(mx-wx,my-wy); if(d<mdist){mdist=d;mm=m;} }
+    const[mx,my]=caravanPos(m); const d=Math.hypot(mx-wx,my-wy); if(d<mdist){mdist=d;mm=m;} }
   if(mm){ selMerchant=mm; selected=null; selBuild=null; selHouse=null; updateInfo(); return; }
   // economy building?
   let bb=null,bd=3.5,bci=-1;
@@ -325,8 +326,7 @@ function render(){
       ctx.fillRect(Math.round(sx-z),Math.round(sy-z*1.6),Math.ceil(z*2),Math.ceil(z*1.8)); }   // soot/rubble
     else blit(e.spr,e.x,e.y); }
   for(const m of WORLD.merchants){ if(!m.segs.length)continue;
-    const s=m.segs[Math.min(m.si,m.segs.length-1)];
-    const mx=s.x0+(s.x1-s.x0)*m.t, my=s.y0+(s.y1-s.y0)*m.t;
+    const[mx,my,s]=caravanPos(m);
     if(mx<vb.x0||mx>vb.x1||my<vb.y0||my>vb.y1) continue;
     const spr = s.mode==='sea'?SPR.ship:SPR.cart;              // caravan turns into a ship on water legs
     blit(spr,mx,my);
@@ -348,8 +348,7 @@ function render(){
   if(framed){ const[bx,by]=w2s(framed.x,framed.y),r=Math.max(6,2.2*cam.zoom),lw=Math.max(2,Math.round(cam.zoom*0.9));
     ctx.strokeStyle='#ffe066';ctx.lineWidth=lw;ctx.lineJoin='miter';ctx.setLineDash([]);
     ctx.strokeRect(Math.round(bx-r), Math.round(by-r*1.7), Math.round(r*2), Math.round(r*2)); }   // tight bracket on picked building/house
-  if(selMerchant&&selMerchant.segs.length){ const s=selMerchant.segs[Math.min(selMerchant.si,selMerchant.segs.length-1)];
-    const mx=s.x0+(s.x1-s.x0)*selMerchant.t, my=s.y0+(s.y1-s.y0)*selMerchant.t, [px,py]=w2s(mx,my), r=Math.max(7,cam.zoom*2.6);
+  if(selMerchant&&selMerchant.segs.length){ const[mx,my]=caravanPos(selMerchant), [px,py]=w2s(mx,my), r=Math.max(7,cam.zoom*2.6);
     ctx.strokeStyle='#ffe066';ctx.lineWidth=Math.max(2,cam.zoom*0.8);ctx.setLineDash([]);
     ctx.strokeRect(Math.round(px-r),Math.round(py-r),Math.round(r*2),Math.round(r*2)); }   // bracket on the picked caravan
   if(WORLD.layer==='ceny') drawPriceLayer();

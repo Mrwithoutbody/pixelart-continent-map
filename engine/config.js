@@ -38,8 +38,8 @@ const BLD={
   farm:{name:'Farma'}, lumber_camp:{name:'Obóz drwali'}, mine:{name:'Kopalnia'},
   quarry:{name:'Kamieniołom'}, fishery:{name:'Przystań'}, salt_works:{name:'Warzelnia'},
   hunter:{name:'Gajówka'}, garbarnia:{name:'Garbarnia'},
-  mill:{name:'Młyn'}, piekarnia:{name:'Piekarnia'}, sawmill:{name:'Tartak'}, smelter:{name:'Huta'},
+  piekarnia:{name:'Piekarnia'}, sawmill:{name:'Tartak'}, smelter:{name:'Huta'},
   warehouse:{name:'Magazyn'}, market:{name:'Targ'}, harbor:{name:'Port'},
   chapel:{name:'Kaplica'}, tower:{name:'Wieża'},
 };
-const ECON_SPR={mill:'windmill', piekarnia:'market', market:'market', chapel:'chapel', tower:'tower', hunter:'cottage'}; // id -> distinctive sprite (else workshop)
+const ECON_SPR={piekarnia:'windmill', market:'market', chapel:'chapel', tower:'tower', hunter:'cottage'}; // id -> distinctive sprite (else workshop)
