@@ -54,7 +54,7 @@ function carveRivers(height,biome,cost,SL){
     if(x>0)chk(i-1); if(x<W-1)chk(i+1); if(y>0)chk(i-W); if(y<H-1)chk(i+W);
   }
   for(let L=0;L<nlab;L++){ if(L===ocean||best[L]<0)continue;
-    const base=rnd(best[L]^0x55)<0.6?3:2;                           // ~60% of rivers a pixel wider
+    const base=rnd(best[L]^0x55)<0.6?4:3;                           // ~60% of rivers a pixel wider (+1px overall)
     const path=[]; let t=best[L]; while(par[t]!==t){ path.push(t); t=par[t]; }   // shore -> sea (last tiles = the mouth)
     for(let k=0;k<path.length;k++){ const fromMouth=path.length-1-k;
       digR(path[k], base + Math.min(4,Math.max(0,5-fromMouth))); }  // delta: fan the last ~5 tiles out into the sea (+3-5px)
