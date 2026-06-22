@@ -113,7 +113,7 @@ function houseDetail(c,h){
     : `<div class="li eco"><span>pusto</span><span></span></div>`;
   openPanel(`<div class="ihead"><span class="nm">${c.name}</span><span class="x" onclick="clearCity()">✕</span></div>`
    +`<div class="ibody">`
-   +`<div class="li clk back" onclick="selHouse=null;updateInfo()"><span>‹ miasto</span><span></span></div>`
+   +`<div class="li clk back" onclick="selHouse=null;updateInfo()"><span>‹ wstecz</span><span></span></div>`
    +`<div class="sect">${RES_NAME[h.btype]||'Dom'}${h.ruined?' <span class="capn full">⚠ pustostan</span>':''}</div>`
    +`<div class="stat"><span>właściciel</span><b>${ownerName(h.owner)}</b></div>`
    +`<div class="stat"><span>mieszkańcy</span><b>${h.ruined?'opuszczony':(HOUSE_POP[h.btype]||20)+' miejsc'}</b></div>`
@@ -164,14 +164,18 @@ function cityTab(c){ const f=FACTIONS[c.f];
 function foodStat(c){ const out=cityFood(c), need=cityNeed(c), ok=out>=need-1e-6;
   return `<div class="stat"><span>wyżywienie</span><b style="color:${ok?'inherit':'var(--red)'}">${out.toFixed(1)}/${need.toFixed(1)}${ok?'':' · głód!'}</b></div>`
    + ((c.starv||0)>0?`<div class="stat"><span>głód</span><b style="color:var(--red)">${c.starv}/${ECON.ruinLimit}</b></div>`:''); }
-// Budynki tab: clicking a building drills into its detail (same panel); back link returns to the list.
+// Budynki tab: economy buildings + dwellings, each clickable into its detail; back link returns to the list.
 function buildsTab(c){
   if(selBuild && selBuild.ci===selected) return buildingDetail(c,selBuild.b);
-  const list=c.builds.length
+  const eco=c.builds.length
     ? c.builds.map((b,i)=>`<div class="li eco clk" onclick="pickBuild(${i})"><span>${b.ruined?'⚠ ':''}${b.name}</span><span style="color:${b.ruined?'var(--red)':'inherit'}">${b.ruined?'ruina':'›'}</span></div>`).join('')
     : `<div class="li eco"><span>brak — zbuduj coś (🔨)</span><span></span></div>`;
-  return `<div class="sect">budynki (${c.builds.length})</div><div class="list">${list}</div>`+prodRows(c);
+  const homes=c.houses.map((h,i)=>`<div class="li eco clk" onclick="pickHouse(${i})"><span>${h.ruined?'⚠ ':''}${RES_NAME[h.btype]||'Dom'}</span><span style="color:${h.ruined?'var(--red)':'inherit'}">${h.ruined?'pustostan':'›'}</span></div>`).join('');
+  return `<div class="sect">gospodarcze (${c.builds.length})</div><div class="list">${eco}</div>`
+    + `<div class="sect">mieszkalne (${c.houses.length})</div><div class="list">${homes}</div>`
+    + prodRows(c);
 }
+function pickHouse(i){ const c=WORLD.cities[selected]; if(!c||!c.houses[i])return; selHouse={ci:selected,h:c.houses[i]}; selBuild=null; selMerchant=null; updateInfo(); }
 function buildingDetail(c,b){ const p=PROD[b.id]||{};
   const head=`<div class="li clk back" onclick="unpickBuild()"><span>‹ wszystkie budynki</span><span></span></div>`
    + `<div class="sect">${b.name}${b.ruined?' <span class="capn full">⚠ ruina</span>':''}</div>`;
