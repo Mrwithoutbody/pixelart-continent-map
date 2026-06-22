@@ -261,8 +261,7 @@ function genWorld(seed){
     c.r=all.reduce((m,h)=>Math.max(m,Math.hypot(h.x-c.x,h.y-c.y)),1.5);
     c.minY=all.reduce((m,h)=>Math.min(m,h.y),c.y);
     c.gold = Math.round(120 + c.pop/8);                                          // town treasury (also funds its caravans)
-    townGive(c,'drewno',Math.round(18+c.pop/14)); townGive(c,'kamień',Math.round(8+c.pop/30));
-    townGive(c,'sól',60); townGive(c,'jedzenie',40);   // build materials + a food/salt buffer until trade warms up
+    townGive(c,'sól',60); townGive(c,'jedzenie',40);   // ONLY a survival buffer (food+salt); all other goods must be produced or traded for
   }
 
   const {houses,relations,ties,legends,intrigues,events,guilds,guildRel,faiths,faithTension}=buildChronicle(cities,rng);
