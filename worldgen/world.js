@@ -314,10 +314,30 @@ function genWorld(seed){
   // combined graph: land roads + sea lanes between ports
   const cadj=cities.map(()=>[]);
   for(const[a,b]of edges){cadj[a].push({to:b,mode:'land'});cadj[b].push({to:a,mode:'land'});}
-  // sea lanes: each port links to its 2 nearest ports (a shipping network in the graph — not drawn on the map)
+  // coarse water grid -> connected water bodies + shortest sea routes (so we never link land-locked ports
+  // and ships follow real water, not a straight line over land)
+  const SC=4, cW=Math.ceil(W/SC), cH=Math.ceil(H/SC), cwater=new Uint8Array(cW*cH);
+  for(let y=0;y<H;y++)for(let x=0;x<W;x++) if(isWater(y*W+x)) cwater[(y/SC|0)*cW+(x/SC|0)]=1;
+  const wcomp=new Int32Array(cW*cH).fill(-1); const DIRS=[[1,0],[-1,0],[0,1],[0,-1]];
+  for(let i=0,nc=0;i<cwater.length;i++) if(cwater[i]&&wcomp[i]<0){ const st=[i];wcomp[i]=nc;
+    while(st.length){const u=st.pop(),ux=u%cW,uy=u/cW|0; for(const[dx,dy]of DIRS){const nx=ux+dx,ny=uy+dy;
+      if(nx<0||ny<0||nx>=cW||ny>=cH)continue; const v=ny*cW+nx; if(cwater[v]&&wcomp[v]<0){wcomp[v]=nc;st.push(v);}}} nc++; }
+  const wcell=d=>Math.min(cH-1,d.y/SC|0)*cW+Math.min(cW-1,d.x/SC|0);
+  const waterPath=(da,db)=>{ const s=wcell(da),t=wcell(db); if(s===t)return [[da.x,da.y],[db.x,db.y]];
+    const prev=new Int32Array(cW*cH).fill(-2); prev[s]=-1; const q=[s]; let qi=0;
+    while(qi<q.length){ const u=q[qi++]; if(u===t)break; const ux=u%cW,uy=u/cW|0;
+      for(const[dx,dy]of DIRS){const nx=ux+dx,ny=uy+dy; if(nx<0||ny<0||nx>=cW||ny>=cH)continue;
+        const v=ny*cW+nx; if(cwater[v]&&prev[v]===-2){prev[v]=u;q.push(v);}}}
+    if(prev[t]===-2)return null; const cells=[]; for(let u=t;u>=0;u=prev[u])cells.unshift(u);
+    const pts=cells.map(u=>[(u%cW)*SC+(SC>>1),(u/cW|0)*SC+(SC>>1)]); pts[0]=[da.x,da.y]; pts[pts.length-1]=[db.x,db.y]; return pts; };
+  // sea lanes: link each port to its 2 nearest ports IN THE SAME WATER BODY; store the real water route
+  const seaLane=new Map();
   const ports=cities.map((_,i)=>i).filter(i=>cities[i].port), pd=(a,b)=>Math.hypot(cities[a].x-cities[b].x,cities[a].y-cities[b].y);
-  for(const a of ports){ const near=ports.filter(b=>b!==a).sort((x,y)=>pd(a,x)-pd(a,y)).slice(0,2);
-    for(const b of near) if(!cadj[a].some(e=>e.to===b&&e.mode==='sea')){ cadj[a].push({to:b,mode:'sea'}); cadj[b].push({to:a,mode:'sea'}); } }
+  for(const a of ports){ const ca=wcomp[wcell(cities[a].dock)];
+    const near=ports.filter(b=>b!==a && wcomp[wcell(cities[b].dock)]===ca).sort((x,y)=>pd(a,x)-pd(a,y)).slice(0,2);
+    for(const b of near){ const key=Math.min(a,b)+','+Math.max(a,b); if(seaLane.has(key))continue;
+      const path=waterPath(cities[a].dock,cities[b].dock); if(!path)continue;
+      seaLane.set(key,path); cadj[a].push({to:b,mode:'sea'}); cadj[b].push({to:a,mode:'sea'}); } }
 
   // ---- route planning (caravan: land legs as cart, sea legs as ship) ----
   const reachableFrom=h=>{const seen=new Set([h]),q=[h],out=[];while(q.length){const u=q.shift();
@@ -331,9 +351,12 @@ function genWorld(seed){
     if(e.mode==='land'){ const P=pathOf.get(Math.min(e.from,e.to)+','+Math.max(e.from,e.to))||[[A.x,A.y],[B.x,B.y]];
       const seq = (P[0][0]===A.x&&P[0][1]===A.y) ? P : P.slice().reverse();      // orient polyline from A to B
       for(let i=0;i+1<seq.length;i++) segs.push({x0:seq[i][0],y0:seq[i][1],x1:seq[i+1][0],y1:seq[i+1][1],mode:'land'}); }
-    else{ segs.push({x0:A.x,y0:A.y,x1:A.dock.x,y1:A.dock.y,mode:'sea'});       // walk to dock, then sail, then to town
-          segs.push({x0:A.dock.x,y0:A.dock.y,x1:B.dock.x,y1:B.dock.y,mode:'sea'});
-          segs.push({x0:B.dock.x,y0:B.dock.y,x1:B.x,y1:B.y,mode:'sea'}); }}
+    else{ segs.push({x0:A.x,y0:A.y,x1:A.dock.x,y1:A.dock.y,mode:'sea'});       // town -> dock
+          const key=Math.min(e.from,e.to)+','+Math.max(e.from,e.to), lane=seaLane.get(key);
+          if(lane){ const path=(lane[0][0]===A.dock.x&&lane[0][1]===A.dock.y)?lane:lane.slice().reverse();   // orient A.dock -> B.dock
+            for(let i=0;i+1<path.length;i++) segs.push({x0:path[i][0],y0:path[i][1],x1:path[i+1][0],y1:path[i+1][1],mode:'sea'}); }  // sail the water route
+          else segs.push({x0:A.dock.x,y0:A.dock.y,x1:B.dock.x,y1:B.dock.y,mode:'sea'});
+          segs.push({x0:B.dock.x,y0:B.dock.y,x1:B.x,y1:B.y,mode:'sea'}); }}                                  // dock -> town
     for(const s of segs)s.len=Math.hypot(s.x1-s.x0,s.y1-s.y0)||1;return segs;};
 
   // ---- merchants: CAPITALISED traders, pure arbitrage. Each owns a purse: buys the cheapest (most
