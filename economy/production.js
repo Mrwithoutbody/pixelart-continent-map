@@ -10,9 +10,10 @@ const ECON={
   gruel:true,            // bakery may run a low-yield unsalted fallback (salt = efficiency, not a death gate)
   ruinLimit:200,         // ticks of sustained famine before a building is abandoned (long + recoverable)
   cargoCap:100,              // caravan load size (Colonization 100-unit)
-  caravanCapital:120, caravanMinGold:8, caravanUpkeep:12,   // starting purse; running cost per trip; below min -> bankrupt
+  caravanCapital:120, caravanMinGold:8, caravanUpkeep:5,    // starting purse; running cost per trip; below min -> bankrupt
+  caravansPerTown:1,         // caravans a town outfits from its treasury at world start (~1/town)
   buildEvery:40, buildReserve:50,           // autonomous town growth: try a build every N ticks if treasury > reserve
-  caravanEvery:60, caravanGold:140, fleetPerTown:3,   // a rich market town spawns a caravan; fleet capped at fleetPerTown*towns
+  caravanEvery:40, caravanGold:110, fleetPerTown:3,   // a rich market town spawns a caravan; fleet capped at fleetPerTown*towns
 };
 
 // recipe per building: out:[res,rate] always; in:[res,rate] for refiners that consume a raw input.

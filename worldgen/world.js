@@ -258,7 +258,7 @@ function genWorld(seed){
     const all=c.houses.concat(c.builds);
     c.r=all.reduce((m,h)=>Math.max(m,Math.hypot(h.x-c.x,h.y-c.y)),1.5);
     c.minY=all.reduce((m,h)=>Math.min(m,h.y),c.y);
-    c.gold = Math.round(40 + c.pop/12);                                          // town treasury (money)
+    c.gold = Math.round(120 + c.pop/8);                                          // town treasury (also funds its caravans)
     townGive(c,'drewno',Math.round(18+c.pop/14)); townGive(c,'kamień',Math.round(8+c.pop/30));
     townGive(c,'sól',60); townGive(c,'jedzenie',40);   // build materials + a food/salt buffer until trade warms up
   }
@@ -374,10 +374,13 @@ function genWorld(seed){
       segs:[],si:0,t:0,speed:0.30+rand()*0.20};   // ~3x faster -> trips actually complete
     m.cargo=buyAt(home,m); const dest=destFor(home,reach,m.cargo,rand,m.risk),route=planRoute(home,dest);
     if(!route||!route.length)return null; m.dest=dest; m.segs=segmentsFor(route); return m; };
+  // caravans ARISE FROM TOWNS: each town outfits as many as its treasury can fund (capped), paid from
+  // its own gold. The starting fleet size therefore emerges from town wealth, not a fixed number.
   const merchants=[];
-  const FLEET=Math.min(90,Math.max(18,Math.round(cities.length*2.2)));   // scale caravans with the world
-  for(let i=0;i<FLEET;i++){ const home=rng()*cities.length|0;
-    const m=newMerchant(home, Math.round(ECON.caravanCapital*(0.6+rng()*0.9)), rng); if(m){ m.t=rng(); merchants.push(m); } }
+  for(let i=0;i<cities.length;i++){ let n=0;
+    while(n<ECON.caravansPerTown && cities[i].gold>=ECON.caravanCapital){
+      const m=newMerchant(i, ECON.caravanCapital, rng); if(!m)break;
+      cities[i].gold-=ECON.caravanCapital; m.t=rng(); merchants.push(m); n++; } }
 
   const layers={ rody:bakeLayer(biome,fac,FACTIONS.map(f=>f.tint),FACTIONS.map(f=>f.border)),
     gildie:bakeLayer(biome,facG,guilds.map(g=>hexRGB(g.color)),guilds.map(g=>g.color)),
