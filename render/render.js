@@ -184,7 +184,7 @@ function cityTab(c){ const f=FACTIONS[c.f];
 // food supply vs the population's appetite (red when short -> famine looming)
 function foodStat(c){ const out=cityFood(c), need=cityNeed(c), ok=out>=need-1e-6;
   return `<div class="stat"><span>wyżywienie</span><b style="color:${ok?'inherit':'var(--red)'}">${out.toFixed(1)}/${need.toFixed(1)}${ok?'':' · głód!'}</b></div>`
-   + ((c.starv||0)>0?`<div class="stat"><span>głód</span><b style="color:var(--red)">${c.starv}/${STARVE_LIMIT}</b></div>`:''); }
+   + ((c.starv||0)>0?`<div class="stat"><span>głód</span><b style="color:var(--red)">${c.starv}/${ECON.ruinLimit}</b></div>`:''); }
 // Budynki tab: clicking a building drills into its detail (same panel); back link returns to the list.
 function buildsTab(c){
   if(selBuild && selBuild.ci===selected) return buildingDetail(c,selBuild.b);
