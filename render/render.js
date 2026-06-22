@@ -89,6 +89,10 @@ function ownerName(o){ if(!o)return '—';
   if(o.k==='wiara')  return (WORLD.faiths[o.id]||{}).name||'Wiara';
   const h=WORLD.houses.find(x=>x.f===o.id); return 'Ród '+(h?h.name:(FACTIONS[o.id]||{}).name); }
 const openPanel=html=>{ info.innerHTML=html; info.classList.add('open'); document.body.classList.add('has-info'); };
+// a warehouse stock list (icon + name + floored qty), goods >=1 only, or "pusto"
+function stockRows(obj){ const ks=Object.keys(obj||{}).filter(r=>obj[r]>=1);
+  return ks.length ? ks.map(r=>`<div class="li"><span>${resIcon(r)}${r}</span><span>${Math.floor(obj[r])}</span></div>`).join('')
+    : `<div class="li eco"><span>pusto</span><span></span></div>`; }
 
 // caravan inspector — the OTHER side of the exchange: what it carries, where, who buys, at what price
 function caravanPanel(){ const m=selMerchant; if(!m||m.dead||!WORLD.merchants.includes(m)){clearCity();return;}
@@ -113,16 +117,14 @@ function caravanPanel(){ const m=selMerchant; if(!m||m.dead||!WORLD.merchants.in
 }
 // dwelling inspector
 function houseDetail(c,h){
-  const keys=Object.keys(h.stock||{}).filter(r=>h.stock[r]>=1);
-  const skl=keys.length? keys.map(r=>`<div class="li"><span>${resIcon(r)}${r}</span><span>${Math.floor(h.stock[r])}</span></div>`).join('')
-    : `<div class="li eco"><span>pusto</span><span></span></div>`;
+  const skl=stockRows(h.stock);
   openPanel(`<div class="ihead"><span class="nm">${c.name}</span><span class="x" onclick="clearCity()">✕</span></div>`
    +`<div class="ibody">`
    +`<div class="li clk back" onclick="selHouse=null;updateInfo()"><span>‹ wstecz</span><span></span></div>`
    +`<div class="sect">${RES_NAME[h.btype]||'Dom'}${h.ruined?' <span class="capn full">⚠ pustostan</span>':''}</div>`
    +`<div class="stat"><span>właściciel</span><b>${ownerName(h.owner)}</b></div>`
    +`<div class="stat"><span>mieszkańcy</span><b>${h.ruined?'opuszczony':(HOUSE_POP[h.btype]||20)+' miejsc'}</b></div>`
-   +`<div class="stat"><span>magazyn</span><b>${Math.floor(unitUsedOf(h))}/${buildStore(h.btype)}</b></div>`
+   +`<div class="stat"><span>magazyn</span><b>${Math.floor(unitUsed(h))}/${buildStore(h.btype)}</b></div>`
    +`<div class="sect">skład</div>${skl}`
    +(h.ruined?`<div class="sect">akcje</div><button class="btn sm" style="margin-top:6px;width:100%" onclick="rebuildHouse()">⚒ Odbuduj (${costStr(h.btype)})</button>`:'')
    +`</div>`);
@@ -184,7 +186,7 @@ function buildsTab(c){
     + prodRows(c);
 }
 function pickHouse(i){ const c=WORLD.cities[selected]; if(!c||!c.houses[i])return; selHouse={ci:selected,h:c.houses[i]}; selBuild=null; selMerchant=null; updateInfo(); }
-function buildingDetail(c,b){ const p=PROD[b.id]||{};
+function buildingDetail(c,b){
   const head=`<div class="li clk back" onclick="unpickBuild()"><span>‹ wszystkie budynki</span><span></span></div>`
    + `<div class="sect">${b.name}${b.ruined?' <span class="capn full">⚠ ruina</span>':''}</div>`;
   if(b.ruined) return head
@@ -195,23 +197,19 @@ function buildingDetail(c,b){ const p=PROD[b.id]||{};
    + `<button class="btn sm ghost" style="margin-top:6px;width:100%" onclick="demolishBuild()">✕ Rozbierz</button>`;
   return head
    + `<div class="stat"><span>właściciel</span><b>${ownerName(b.owner)}</b></div>`
-   + `<div class="stat"><span>magazyn</span><b>${Math.floor(unitUsedOf(b))}/${buildStore(b.id)}</b></div>`
+   + `<div class="stat"><span>magazyn</span><b>${Math.floor(unitUsed(b))}/${buildStore(b.id)}</b></div>`
    + recipeRows(b,c)
    + priceChips(c,b)
    + `<div class="stat"><span>biom</span><b>${BIOME_NAME[WORLD.biomeAt(b.x,b.y)]}</b></div>`
    + `<div class="sect">akcje</div><div class="li eco"><span>zadania — wkrótce</span><span></span></div>`
    + `<button class="btn sm ghost" style="margin-top:10px;width:100%" onclick="demolishBuild()">✕ Rozbierz</button>`;
 }
-const unitUsedOf=u=>{ let s=0; if(u.stock)for(const r in u.stock)if(u.stock[r]>0)s+=u.stock[r]; return s; };
 // recipe(s) of a building as "inputs → output/turę", plus THIS building's own warehouse contents
 function recipeRows(b,c){ const recs=recipesOf(b.id); let h='';
   if(recs.length) h+=recs.map(r=>{ const lhs=r.in.length?r.in.map(x=>`${x[1]} ${x[0]}`).join(' + '):'produkuje';
     const rhs=`${r.out[1]} ${r.out[0]}`+(r.out2?` + ${r.out2[1]} ${r.out2[0]}`:'');
     return `<div class="stat"><span>${lhs}</span><b>→ ${rhs}/turę</b></div>`; }).join('');
-  const keys=Object.keys(b.stock||{}).filter(r=>b.stock[r]>=1);
-  h+=`<div class="sect">skład budynku</div>`+(keys.length
-    ? keys.map(r=>`<div class="li"><span>${resIcon(r)}${r}</span><span>${Math.floor(b.stock[r])}</span></div>`).join('')
-    : `<div class="li eco"><span>pusto</span><span></span></div>`);
+  h+=`<div class="sect">skład budynku</div>`+stockRows(b.stock);
   return h; }
 // this building's own bid/ask prices (pure exchange) — color-coded, no raw math thrust at the player
 function priceChips(c,b){ const recs=recipesOf(b.id); const buys=new Set(),sells=new Set();
@@ -231,8 +229,7 @@ function townGoods(c){ const o={}; for(const u of storesOf(c)) for(const r in u.
 function prodRows(c){
   const out=cityOutputs(c), ok=Object.keys(out);
   const prod = ok.length ? ok.map(r=>`<div class="li eco"><span>${r}</span><span>+${out[r]}/turę</span></div>`).join('') : '';
-  const st=townGoods(c), sk=Object.keys(st).filter(r=>st[r]>=1);
-  const stock = sk.length ? sk.map(r=>`<div class="li"><span>${resIcon(r)}${r}</span><span>${Math.floor(st[r])}</span></div>`).join('') : `<div class="li eco"><span>pusto</span><span></span></div>`;
+  const stock=stockRows(townGoods(c));
   const cap=cityCap(c), used=Math.floor(cityUsed(c)), pct=cap?Math.min(100,Math.round(used/cap*100)):0;
   return (prod?`<div class="sect">produkcja</div><div class="list">${prod}</div>`:'')
        + `<div class="sect">magazyn miasta <span class="capn${pct>=90?' full':''}">${used}/${cap}</span></div>`
