@@ -108,7 +108,7 @@ function buildsTab(c){
 function buildingDetail(c,b){ const p=PROD[b.id]||{};
   return `<div class="li clk back" onclick="unpickBuild()"><span>‹ wszystkie budynki</span><span></span></div>`
    + `<div class="sect">${b.name}</div>`
-   + (b.id==='warehouse'?`<div class="stat"><span>pojemność</span><b>+${STORAGE_PER_WAREHOUSE} miejsca</b></div>`:'')
+   + `<div class="stat"><span>magazyn</span><b>+${buildStore(b.id)} miejsca</b></div>`
    + (p.in?`<div class="stat"><span>zużywa</span><b>−${p.in[1]} ${p.in[0]}/turę</b></div>`:'')
    + `<div class="stat"><span>produkuje</span><b>${p.out?`+${p.out[1]} ${p.out[0]}/turę`:'—'}</b></div>`
    + (p.in?`<div class="stat"><span>w magazynie</span><b>${Math.floor((c.stock||{})[p.in[0]]||0)} ${p.in[0]}</b></div>`:'')
