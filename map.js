@@ -414,8 +414,8 @@ function blit(fr,wx,wy,shadow=true){const[sx,sy]=w2s(wx,wy),z=cam.zoom;
   }
   ctx.drawImage(fr.img,fr.sx,fr.sy,fr.sw,fr.sh,Math.round(sx-fr.ox*z),Math.round(sy-fr.oy*z),Math.ceil(fr.sw*z),Math.ceil(fr.sh*z));}
 function viewBounds(){const[x0,y0]=s2w(0,0),[x1,y1]=s2w(cv.width,cv.height);return{x0:x0-2,y0:y0-2,x1:x1+2,y1:y1+18};}
-function drawRoads(){ctx.strokeStyle=PAL.road;ctx.lineWidth=Math.max(1,cam.zoom*0.6);
-  ctx.lineCap='round';ctx.lineJoin='round';ctx.setLineDash([cam.zoom*1.5,cam.zoom*1.1]);ctx.beginPath();
+function drawRoads(){ctx.strokeStyle=PAL.road;ctx.lineWidth=Math.max(2,Math.round(cam.zoom*1.1));
+  ctx.lineCap='butt';ctx.lineJoin='miter';ctx.setLineDash([Math.round(cam.zoom*2),Math.round(cam.zoom*1.4)]);ctx.beginPath();
   for(const[a,b]of WORLD.edges){const[px,py]=w2s(WORLD.cities[a].x,WORLD.cities[a].y),
     [qx,qy]=w2s(WORLD.cities[b].x,WORLD.cities[b].y); ctx.moveTo(px,py);ctx.lineTo(qx,qy);}   // straight road A->B
   ctx.stroke();ctx.setLineDash([]);}
@@ -459,8 +459,9 @@ function render(){
       ctx.fillStyle=FACTIONS[m.f].flag; ctx.fillRect(Math.round(sx),top,Math.ceil(z*2),Math.ceil(z*1.5));
     }}
   if(selected!=null){const c=WORLD.cities[selected];const[sx,sy]=w2s(c.x,c.y);
-    ctx.strokeStyle='rgba(255,230,109,0.45)';ctx.lineWidth=2;ctx.setLineDash([6,4]);
-    ctx.beginPath();ctx.arc(sx,sy,(c.r+3)*cam.zoom,0,6.2832);ctx.stroke();ctx.setLineDash([]);}
+    const r=Math.round((c.r+4)*cam.zoom), lw=Math.max(3,Math.round(cam.zoom*1.1));
+    ctx.strokeStyle='#ffe066';ctx.lineWidth=lw;ctx.lineJoin='miter';ctx.setLineDash([]);
+    ctx.strokeRect(Math.round(sx)-r, Math.round(sy)-r, r*2, r*2);}   // chunky square bracket, no rounding
   drawLabels();
 }
 
