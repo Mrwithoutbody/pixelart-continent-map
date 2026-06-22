@@ -371,7 +371,7 @@ function drawPriceLayer(){ const vb=viewBounds();
 let last=performance.now();
 function tick(now){const dt=Math.min(0.05,(now-last)/1000);last=now;
   if(!WORLD){ render(); requestAnimationFrame(tick); return; }   // idle on start screen until a world exists
-  for(const m of WORLD.merchants){ if(!m.segs.length)continue;
+  for(const m of WORLD.merchants){ if(m.dead||!m.segs.length||m.si>=m.segs.length)continue;   // skip bankrupt/finished until reaped
     const s=m.segs[m.si]; m.t+=m.speed*dt*20/s.len;
     if(m.t>=1){ m.t=0; m.si++; if(m.si>=m.segs.length) WORLD.replan(m); }}
   if(tickEconomy(WORLD,dt) && (selected!=null||selBuild)) updateInfo();   // refresh open panel each econ tick
