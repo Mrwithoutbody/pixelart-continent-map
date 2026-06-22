@@ -22,11 +22,10 @@ addEventListener('mousemove',e=>{if(!drag)return;cam.x=drag.cx-(e.clientX-drag.s
 
 // ---- selection + city / building info panel (GUI markup lives in index.html #info) ----
 let selected=null, selBuild=null, selHouse=null, selMerchant=null, buildMode=null, infoTab='miasto';   // selections + build-type + panel tab
-let assignMode=null, orderRes=null;   // transport-order assignment: caravan awaiting a destination click + chosen good
 const BIOME_NAME=['ocean','płycizna','plaża','pustynia','trawa','las','wzgórza','góry'];
 const RES_NAME={manor:'Dwór',townhouse:'Kamienica',house:'Dom',shack:'Chata'};
 const info=document.getElementById('info');
-function clearCity(){selected=null;selBuild=null;selHouse=null;selMerchant=null;assignMode=null;infoTab='miasto';updateInfo();}    // panel close button
+function clearCity(){selected=null;selBuild=null;selHouse=null;selMerchant=null;infoTab='miasto';updateInfo();}    // panel close button
 // enter/leave build mode (a building-type id to place on the next map click)
 function setBuild(id){ buildMode=id; document.body.classList.toggle('building',!!id);
   const bb=document.getElementById('buildbar'); if(bb)bb.classList.remove('open'); }
@@ -35,11 +34,6 @@ addEventListener('keydown',e=>{ if(e.key==='Escape'){exitBuild();clearCity();} }
 
 function pickAt(sx,sy){ if(!WORLD)return; const[wx,wy]=s2w(sx,sy);
   if(buildMode){ placeBuilding(wx,wy); return; }
-  // assigning a transport order: the next city click becomes the caravan's destination
-  if(assignMode){ let bi=-1,bd=1e9; WORLD.cities.forEach((c,i)=>{const d=Math.hypot(c.x-wx,c.y-wy); if(d<c.r+4&&d<bd){bd=d;bi=i;}});
-    if(bi>=0){ assignMode.order={res:orderRes, src:assignMode.home, dst:bi}; WORLD.applyOrder(assignMode);
-      flash(`zlecenie: ${orderRes} → ${WORLD.cities[bi].name}`);
-      selMerchant=assignMode; assignMode=null; updateInfo(); } return; }
   // caravan under the cursor? (they sit on top)
   let mm=null,mdist=3; for(const m of WORLD.merchants){ if(!m.segs.length)continue;
     const s=m.segs[Math.min(m.si,m.segs.length-1)], mx=s.x0+(s.x1-s.x0)*m.t, my=s.y0+(s.y1-s.y0)*m.t;
@@ -107,26 +101,8 @@ function caravanPanel(){ const m=selMerchant; if(!m){clearCity();return;}
       +`<div class="stat"><span>kupiec</span><b>${buyer.build?buyer.build.name:'targ'} (${dest?dest.name:''})</b></div>`
       +`<div class="stat"><span>cena/szt</span><b>${buyer.price.toFixed(1)} zł</b></div>`
       +`<div class="stat"><span>wartość</span><b>${Math.round(m.cargo.qty*buyer.price)} zł</b></div>`; }
-  body+=orderControls(m);
   openPanel(`<div class="ihead"><span class="nm">🐎 Karawana</span><span class="x" onclick="clearCity()">✕</span></div><div class="ibody">${body}</div>`);
 }
-// player transport order UI: choose a good + a destination; the caravan shuttles it on a fixed line
-function orderControls(m){
-  if(m.order){ const o=m.order;
-    return `<div class="sect">zlecenie transportu</div>`
-     +`<div class="stat"><span>wozi</span><b>${resIcon(o.res)}${o.res}</b></div>`
-     +`<div class="stat"><span>z → do</span><b>${WORLD.cities[o.src].name} → ${WORLD.cities[o.dst].name}</b></div>`
-     +`<button class="btn sm ghost" style="margin-top:6px;width:100%" onclick="clearOrder()">✕ anuluj zlecenie</button>`; }
-  const goods=['jedzenie','zboże','ryby','sól','drewno','kamień','metal','deski'];
-  const chips=goods.map(r=>`<button class="pg${orderRes===r?' on':''}" onclick="setOrderRes('${r}')">${resIcon(r)}${r}</button>`).join('');
-  return `<div class="sect">zleć transport</div>`
-   +`<div class="hint">1) wybierz towar · 2) kliknij miasto-cel</div>`
-   +`<div class="chips">${chips}</div>`
-   +`<button class="btn sm" style="margin-top:6px;width:100%${orderRes?'':';opacity:.5'}" onclick="startAssign()">📍 wybierz miasto-cel${orderRes?' ('+orderRes+')':''}</button>`;
-}
-function setOrderRes(r){ orderRes=r; updateInfo(); }
-function startAssign(){ if(!selMerchant)return; if(!orderRes)return flash('najpierw wybierz towar'); assignMode=selMerchant; flash('kliknij miasto-cel na mapie'); }
-function clearOrder(){ if(selMerchant)selMerchant.order=null; assignMode=null; updateInfo(); }
 // dwelling inspector
 function houseDetail(c,h){
   const keys=Object.keys(h.stock||{}).filter(r=>h.stock[r]>0);
