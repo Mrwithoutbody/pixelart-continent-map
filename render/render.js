@@ -42,27 +42,34 @@ function pickAt(sx,sy){ if(!WORLD)return; const[wx,wy]=s2w(sx,sy);
   let best=null,cd=1e9; WORLD.cities.forEach((c,i)=>{const d=Math.hypot(c.x-wx,c.y-wy); if(d<c.r+3&&d<cd){cd=d;best=i;}});
   selected=best; selBuild=null; updateInfo();
 }
-// place the build-mode building on land near a town
+function flash(msg){ const t=document.getElementById('toast'); if(!t)return;
+  t.textContent=msg; t.classList.add('show'); clearTimeout(flash._t); flash._t=setTimeout(()=>t.classList.remove('show'),1600); }
+// place the build-mode building on land near a town, paying its cost from that town's stock
 function placeBuilding(wx,wy){ const x=Math.round(wx),y=Math.round(wy);
-  if(!WORLD.passableAt(x,y)) return;                              // land only
+  if(!WORLD.passableAt(x,y)) return flash('tu nie zbudujesz (woda/góry)');
   let ci=-1,bd=46; WORLD.cities.forEach((c,i)=>{const d=Math.hypot(c.x-x,c.y-y); if(d<bd){bd=d;ci=i;}});
-  if(ci<0) return;                                                // must be near a town
+  if(ci<0) return flash('za daleko od miasta');
   const c=WORLD.cities[ci];
-  if(c.builds.concat(c.houses).some(o=>Math.abs(o.x-x)<3&&Math.abs(o.y-y)<3)) return;   // not on another building
+  if(c.builds.concat(c.houses).some(o=>Math.abs(o.x-x)<3&&Math.abs(o.y-y)<3)) return flash('miejsce zajęte');
+  if(!canAfford(c,buildMode)) return flash(`${c.name}: brak ${missingFor(c,buildMode).join(', ')}`);
+  payCost(c,buildMode);
   const b=makeBuild(buildMode,x,y); c.builds.push(b);
   c.r=Math.max(c.r,Math.hypot(x-c.x,y-c.y)+1);
+  flash(`zbudowano: ${b.name} (${c.name})`);
   exitBuild(); selBuild={ci,b}; selected=ci; updateInfo();
 }
 function demolishBuild(){ if(!selBuild)return; const c=WORLD.cities[selBuild.ci];
   const i=c.builds.indexOf(selBuild.b); if(i>=0)c.builds.splice(i,1); selBuild=null; updateInfo(); }
 
 // info panel for a single building
-function buildingInfo(){ const c=WORLD.cities[selBuild.ci], b=selBuild.b, p=PROD[b.id];
+function buildingInfo(){ const c=WORLD.cities[selBuild.ci], b=selBuild.b, p=PROD[b.id]||{};
   info.innerHTML=
     `<div class="ihead"><span class="nm">${b.name}</span><span class="x" onclick="clearCity()">✕</span></div>`
    +`<div class="ibody">`
-   + `<div class="fac">${c.name} · ${WORLD.houses.find(h=>h.f===c.f)?.name||''}</div>`
-   + `<div class="stat"><span>produkcja</span><b>${p&&p.res?`+${p.rate} ${p.res}/turę`:'—'}</b></div>`
+   + `<div class="fac">${c.name} · Ród ${WORLD.houses.find(h=>h.f===c.f)?.name||''}</div>`
+   + (p.in?`<div class="stat"><span>zużywa</span><b>−${p.in[1]} ${p.in[0]}/turę</b></div>`:'')
+   + `<div class="stat"><span>produkuje</span><b>${p.out?`+${p.out[1]} ${p.out[0]}/turę`:'—'}</b></div>`
+   + (p.in?`<div class="stat"><span>w magazynie</span><b>${Math.floor((c.stock||{})[p.in[0]]||0)} ${p.in[0]}</b></div>`:'')
    + `<div class="stat"><span>biom</span><b>${BIOME_NAME[WORLD.biomeAt(b.x,b.y)]}</b></div>`
    + `<button class="btn sm ghost" style="margin-top:10px" onclick="demolishBuild()">✕ Rozbierz</button>`
    +`</div>`;

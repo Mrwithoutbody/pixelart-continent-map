@@ -251,6 +251,7 @@ function genWorld(seed){
     const all=c.houses.concat(c.builds);
     c.r=all.reduce((m,h)=>Math.max(m,Math.hypot(h.x-c.x,h.y-c.y)),1.5);
     c.minY=all.reduce((m,h)=>Math.min(m,h.y),c.y);
+    c.stock={ drewno:Math.round(18+c.pop/14), 'kamień':Math.round(8+c.pop/30), 'złoto':Math.round(12+c.pop/18) };  // starting funds to build with
   }
 
   const {houses,relations,ties,legends,intrigues,events,guilds,guildRel,faiths,faithTension}=buildChronicle(cities,rng);

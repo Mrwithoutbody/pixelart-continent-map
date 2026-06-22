@@ -62,7 +62,7 @@ const UI=(()=>{
     toggleBuild(){ const bb=document.getElementById('buildbar');
       if(bb.classList.contains('open')){ bb.classList.remove('open'); exitBuild(); return; }
       bb.innerHTML=`<div class="bt">BUDUJ<span class="x" onclick="UI.toggleBuild()">✕</span></div>`
-        +`<div class="grid">`+BUILDABLE.map(o=>`<span class="bopt" onclick="setBuild('${o.id}')">${o.name}</span>`).join('')+`</div>`
+        +`<div class="grid">`+BUILDABLE.map(o=>`<span class="bopt" onclick="setBuild('${o.id}')">${o.name}<span class="bcost">${costStr(o.id)}</span></span>`).join('')+`</div>`
         +`<div class="hint">wybierz typ, potem klik na lądzie przy mieście · Esc = anuluj</div>`;
       bb.classList.add('open'); },
   };
