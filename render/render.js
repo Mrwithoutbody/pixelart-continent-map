@@ -17,20 +17,59 @@ function w2s(wx,wy){return [(wx-cam.x)*cam.zoom+cv.width/2,(wy-cam.y)*cam.zoom+c
 function s2w(sx,sy){return [(sx-cv.width/2)/cam.zoom+cam.x,(sy-cv.height/2)/cam.zoom+cam.y];}
 let drag=null,downPos=null;
 cv.addEventListener('mousedown',e=>{drag={sx:e.clientX,sy:e.clientY,cx:cam.x,cy:cam.y};downPos={x:e.clientX,y:e.clientY};});
-addEventListener('mouseup',e=>{ if(downPos){const dx=e.clientX-downPos.x,dy=e.clientY-downPos.y; if(dx*dx+dy*dy<16) pickCity(e.clientX,e.clientY);} drag=null;downPos=null;});
+addEventListener('mouseup',e=>{ if(downPos){const dx=e.clientX-downPos.x,dy=e.clientY-downPos.y; if(dx*dx+dy*dy<16) pickAt(e.clientX,e.clientY);} drag=null;downPos=null;});
 addEventListener('mousemove',e=>{if(!drag)return;cam.x=drag.cx-(e.clientX-drag.sx)/cam.zoom;cam.y=drag.cy-(e.clientY-drag.sy)/cam.zoom;clampCam();});
 
-// ---- selection + city info panel (GUI markup lives in index.html #info) ----
-let selected=null;
+// ---- selection + city / building info panel (GUI markup lives in index.html #info) ----
+let selected=null, selBuild=null, buildMode=null;   // city idx · {ci,b} building · build-type id
 const BIOME_NAME=['ocean','płycizna','plaża','pustynia','trawa','las','wzgórza','góry'];
 const RES_NAME={manor:'Dwór',townhouse:'Kamienica',house:'Dom',shack:'Chata'};
 const info=document.getElementById('info');
-function clearCity(){selected=null;updateInfo();}        // exposed for the panel close button
-function pickCity(sx,sy){ if(!WORLD)return; const[wx,wy]=s2w(sx,sy); let best=null,bd=1e9;
-  for(let i=0;i<WORLD.cities.length;i++){const c=WORLD.cities[i],d=Math.hypot(c.x-wx,c.y-wy);
-    if(d<c.r+3 && d<bd){bd=d;best=i;}}
-  selected=best; updateInfo(); }
+function clearCity(){selected=null;selBuild=null;updateInfo();}    // panel close button
+// enter/leave build mode (a building-type id to place on the next map click)
+function setBuild(id){ buildMode=id; document.body.classList.toggle('building',!!id);
+  const bb=document.getElementById('buildbar'); if(bb)bb.classList.remove('open'); }
+function exitBuild(){ setBuild(null); }
+addEventListener('keydown',e=>{ if(e.key==='Escape'){exitBuild();clearCity();} });
+
+function pickAt(sx,sy){ if(!WORLD)return; const[wx,wy]=s2w(sx,sy);
+  if(buildMode){ placeBuilding(wx,wy); return; }
+  // nearest economy building under the cursor (a few tiles) -> select it
+  let bb=null,bd=3.5,bci=-1;
+  WORLD.cities.forEach((c,ci)=>{ for(const b of c.builds){ const d=Math.hypot(b.x-wx,b.y-wy); if(d<bd){bd=d;bb=b;bci=ci;} } });
+  if(bb){ selBuild={ci:bci,b:bb}; selected=bci; updateInfo(); return; }
+  // else nearest town
+  let best=null,cd=1e9; WORLD.cities.forEach((c,i)=>{const d=Math.hypot(c.x-wx,c.y-wy); if(d<c.r+3&&d<cd){cd=d;best=i;}});
+  selected=best; selBuild=null; updateInfo();
+}
+// place the build-mode building on land near a town
+function placeBuilding(wx,wy){ const x=Math.round(wx),y=Math.round(wy);
+  if(!WORLD.passableAt(x,y)) return;                              // land only
+  let ci=-1,bd=46; WORLD.cities.forEach((c,i)=>{const d=Math.hypot(c.x-x,c.y-y); if(d<bd){bd=d;ci=i;}});
+  if(ci<0) return;                                                // must be near a town
+  const c=WORLD.cities[ci];
+  if(c.builds.concat(c.houses).some(o=>Math.abs(o.x-x)<3&&Math.abs(o.y-y)<3)) return;   // not on another building
+  const b=makeBuild(buildMode,x,y); c.builds.push(b);
+  c.r=Math.max(c.r,Math.hypot(x-c.x,y-c.y)+1);
+  exitBuild(); selBuild={ci,b}; selected=ci; updateInfo();
+}
+function demolishBuild(){ if(!selBuild)return; const c=WORLD.cities[selBuild.ci];
+  const i=c.builds.indexOf(selBuild.b); if(i>=0)c.builds.splice(i,1); selBuild=null; updateInfo(); }
+
+// info panel for a single building
+function buildingInfo(){ const c=WORLD.cities[selBuild.ci], b=selBuild.b, p=PROD[b.id];
+  info.innerHTML=
+    `<div class="ihead"><span class="nm">${b.name}</span><span class="x" onclick="clearCity()">✕</span></div>`
+   +`<div class="ibody">`
+   + `<div class="fac">${c.name} · ${WORLD.houses.find(h=>h.f===c.f)?.name||''}</div>`
+   + `<div class="stat"><span>produkcja</span><b>${p&&p.res?`+${p.rate} ${p.res}/turę`:'—'}</b></div>`
+   + `<div class="stat"><span>biom</span><b>${BIOME_NAME[WORLD.biomeAt(b.x,b.y)]}</b></div>`
+   + `<button class="btn sm ghost" style="margin-top:10px" onclick="demolishBuild()">✕ Rozbierz</button>`
+   +`</div>`;
+  info.classList.add('open');document.body.classList.add('has-info');
+}
 function updateInfo(){
+  if(selBuild){ buildingInfo(); return; }
   if(selected==null||!WORLD){info.classList.remove('open');document.body.classList.remove('has-info');return;}
   const c=WORLD.cities[selected],f=FACTIONS[c.f];
   const house=WORLD.houses.find(h=>h.f===c.f);
@@ -55,8 +94,18 @@ function updateInfo(){
    + `<div class="stat"><span>drogi</span><b>${WORLD.adj[selected].length}</b></div>`
    + `<div class="sect">mieszkalne (${c.houses.length})</div><div class="list">${resRows}</div>`
    + `<div class="sect">gospodarka (${c.builds.length})</div><div class="list">${ecoRows}</div>`
+   + prodRows(c)
    +`</div>`;
   info.classList.add('open');document.body.classList.add('has-info');
+}
+// production + stockpile sections for a town
+function prodRows(c){
+  const out=cityOutputs(c), ok=Object.keys(out);
+  const prod = ok.length ? ok.map(r=>`<div class="li eco"><span>${r}</span><span>+${out[r]}/turę</span></div>`).join('') : '';
+  const st=c.stock||{}, sk=Object.keys(st).filter(r=>st[r]>0);
+  const stock = sk.length ? sk.map(r=>`<div class="li"><span>${r}</span><span>${Math.floor(st[r])}</span></div>`).join('') : `<div class="li eco"><span>pusto</span><span></span></div>`;
+  return (prod?`<div class="sect">produkcja</div><div class="list">${prod}</div>`:'')
+       + `<div class="sect">skarbiec</div><div class="list">${stock}</div>`;
 }
 cv.addEventListener('wheel',e=>{e.preventDefault();const[wx,wy]=s2w(e.clientX,e.clientY);
   cam.zoom*=e.deltaY<0?1.12:1/1.12;clampCam();const[nx,ny]=s2w(e.clientX,e.clientY);cam.x+=wx-nx;cam.y+=wy-ny;clampCam();},{passive:false});
@@ -153,6 +202,7 @@ function tick(now){const dt=Math.min(0.05,(now-last)/1000);last=now;
   for(const m of WORLD.merchants){ if(!m.segs.length)continue;
     const s=m.segs[m.si]; m.t+=m.speed*dt*20/s.len;
     if(m.t>=1){ m.t=0; m.si++; if(m.si>=m.segs.length) WORLD.replan(m); }}
+  if(tickEconomy(WORLD,dt) && (selected!=null||selBuild)) updateInfo();   // refresh open panel each econ tick
   render();requestAnimationFrame(tick);}
 
 // ---------- boot ----------

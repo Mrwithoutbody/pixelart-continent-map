@@ -22,6 +22,7 @@
     color:var(--parch);-webkit-font-smoothing:none;font-smooth:never}
   canvas{display:block;image-rendering:pixelated;cursor:grab}
   canvas:active{cursor:grabbing}
+  body.building canvas{cursor:crosshair}
   body[data-screen="start"] canvas,
   body[data-screen="gen"] canvas{cursor:default}
 
@@ -89,6 +90,18 @@
   #hud .lyr{background:var(--panel2);color:var(--parch2);font-size:11px;padding:4px 8px;
     box-shadow:inset 0 -2px 0 #0005, 0 2px 0 var(--line)}
   #hud .lyr.on{background:var(--green);color:var(--ink);box-shadow:inset 0 2px 0 #ffffff55, inset 0 -3px 0 #0006, 0 2px 0 var(--line)}
+
+  /* build palette */
+  #buildbar{position:fixed;left:12px;bottom:12px;z-index:14;width:200px;display:none;padding:9px 10px}
+  body[data-screen="game"] #buildbar.open{display:block}
+  #buildbar .bt{font-family:var(--title);font-size:12px;color:var(--gold);margin-bottom:7px;
+    display:flex;justify-content:space-between}
+  #buildbar .bt .x{cursor:pointer;color:var(--parch2)}
+  #buildbar .grid{display:grid;grid-template-columns:1fr 1fr;gap:5px}
+  #buildbar .bopt{cursor:pointer;font-size:11px;color:var(--parch);background:var(--panel2);
+    border:2px solid var(--line);border-radius:2px;padding:6px 7px;box-shadow:inset 0 -2px 0 #0005}
+  #buildbar .bopt:hover{background:var(--green);color:var(--ink)}
+  #buildbar .hint{font-size:10px;color:#8b9676;margin-top:7px}
 
   /* exit-to-menu, top-right small */
   #toMenu{position:fixed;top:12px;right:12px;z-index:11}
@@ -171,9 +184,12 @@
   <div class="row">
     <button class="btn sm" onclick="UI.regenInGame()">↻ nowa mapa</button>
     <button class="btn sm ghost" onclick="UI.toggleChronicle()">📜 kroniki</button>
+    <button class="btn sm ghost" onclick="UI.toggleBuild()">🔨 buduj</button>
   </div>
   <span class="seedbox">ziarno: <b id="seed">0</b></span>
 </div>
+<!-- build palette (filled by ui.js from BUILDABLE) -->
+<div id="buildbar" class="panel"></div>
 <button id="toMenu" class="btn sm ghost" onclick="UI.toStart()">☰ menu</button>
 
 <!-- ===== CITY INFO PANEL (filled by map.js) ===== -->
@@ -217,6 +233,7 @@
 <script src="chronicle/generate.js"></script>
 <script src="worldgen/world.js"></script>
 <script src="chronicle/panel.js"></script>
+<script src="economy/production.js"></script>
 <script src="render/render.js"></script>
 <script src="ui/ui.js"></script>
 </body>
