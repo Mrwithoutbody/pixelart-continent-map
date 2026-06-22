@@ -60,9 +60,10 @@ const UI=(()=>{
 })();
 
 // boot: start screen by default. Dev deep-links: #game jumps straight in,
-// #city opens the busiest city's panel (handy for screenshots / testing).
+// #city opens the busiest city's panel, #map shows a zoomed-out overview.
 (function boot(){
   const h=location.hash;
+  if(h==='#map'){ UI.toGame(); cam.x=W/2; cam.y=H/2; cam.zoom=1; clampCam(); return; }
   if(h==='#game'){ UI.toGame(); return; }
   if(h==='#city'){ UI.toGame();
     let bi=0; WORLD.cities.forEach((c,i)=>{if(c.pop>WORLD.cities[bi].pop)bi=i;});

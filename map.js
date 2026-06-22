@@ -144,6 +144,47 @@ function placeFields(c,biome,rng){
   }
   return out;
 }
+// Connect most water bodies: carve shallow channels from inland lakes to the sea.
+// No special "river" entity — carved tiles simply become water; rivers emerge naturally.
+function carveRivers(height,biome,cost,SL){
+  const N=W*H, isW=i=>biome[i]<=BIOME.SHALLOW, q=new Int32Array(N);
+  // 1) label water components (4-connectivity); ocean = the largest one
+  const label=new Int32Array(N).fill(-1), size=[]; let nlab=0;
+  for(let s=0;s<N;s++){ if(!isW(s)||label[s]>=0)continue;
+    let head=0,tail=0; q[tail++]=s; label[s]=nlab; let sz=0;
+    while(head<tail){ const u=q[head++]; sz++; const x=u%W,y=(u/W)|0;
+      if(x>0   && isW(u-1) && label[u-1]<0){label[u-1]=nlab;q[tail++]=u-1;}
+      if(x<W-1 && isW(u+1) && label[u+1]<0){label[u+1]=nlab;q[tail++]=u+1;}
+      if(y>0   && isW(u-W) && label[u-W]<0){label[u-W]=nlab;q[tail++]=u-W;}
+      if(y<H-1 && isW(u+W) && label[u+W]<0){label[u+W]=nlab;q[tail++]=u+W;}
+    }
+    size[nlab++]=sz;
+  }
+  if(nlab<=1) return;
+  let ocean=0; for(let i=1;i<nlab;i++) if(size[i]>size[ocean]) ocean=i;
+  // 2) BFS from every ocean tile across land -> nearest-sea distance + parent path
+  const dist=new Int32Array(N).fill(-1), par=new Int32Array(N).fill(-1);
+  let head=0,tail=0;
+  for(let i=0;i<N;i++) if(label[i]===ocean){ dist[i]=0; par[i]=i; q[tail++]=i; }
+  while(head<tail){ const u=q[head++], x=u%W,y=(u/W)|0, nd=dist[u]+1;
+    const go=v=>{ if(isW(v)||dist[v]>=0)return; dist[v]=nd; par[v]=u; q[tail++]=v; };
+    if(x>0)go(u-1); if(x<W-1)go(u+1); if(y>0)go(u-W); if(y<H-1)go(u+W);
+  }
+  // 3) per sizable lake, pick its shore tile closest to the sea, carve the channel back
+  const MINSZ=5, SLh=SL-0.05;
+  const dig=i=>{ if(biome[i]>BIOME.SHALLOW)biome[i]=BIOME.SHALLOW; if(height[i]>SLh)height[i]=SLh; cost[i]=COST[biome[i]]; };
+  const digWide=i=>{ const x=i%W,y=(i/W)|0; dig(i); if(x>0)dig(i-1); if(x<W-1)dig(i+1); if(y>0)dig(i-W); if(y<H-1)dig(i+W); };
+  const best=new Int32Array(nlab).fill(-1);    // shore-land tile nearest the sea, per lake
+  for(let i=0;i<N;i++){ if(!isW(i)||label[i]===ocean)continue; const L=label[i]; if(size[L]<MINSZ)continue;
+    const x=i%W,y=(i/W)|0;
+    const chk=v=>{ if(dist[v]<0)return; if(best[L]<0||dist[v]<dist[best[L]]) best[L]=v; };
+    if(x>0)chk(i-1); if(x<W-1)chk(i+1); if(y>0)chk(i-W); if(y<H-1)chk(i+W);
+  }
+  for(let L=0;L<nlab;L++){ if(L===ocean||best[L]<0)continue;
+    let t=best[L]; while(par[t]!==t){ digWide(t); t=par[t]; }   // shore -> sea, becomes water
+  }
+}
+
 function genWorld(seed){
   const rng=mulberry32(seed);
   const nH=makeNoise(seed), nW1=makeNoise(seed^0x1111), nW2=makeNoise(seed^0x2222), nM=makeNoise(seed^0x9e37), nD=makeNoise(seed*7+1);
@@ -176,6 +217,8 @@ function genWorld(seed){
     else bi=BIOME.GRASS;
     biome[i]=bi; cost[i]=COST[bi];
   }
+
+  carveRivers(height,biome,cost,SL);     // link inland lakes to the sea before placing anything
 
   const isLand=i=>biome[i]>=BIOME.BEACH;
   const isWater=i=>biome[i]<=BIOME.SHALLOW;
