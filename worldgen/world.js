@@ -335,14 +335,13 @@ function genWorld(seed){
   // Load the home's biggest surplus, then route to the town that most NEEDS it (consumes it as a
   // refiner input / is low on it / has free storage). Ore reaches smelters, timber/stone reach
   // builders, food reaches markets. cityCap/cityUsed/PROD are runtime globals (loaded after this).
-  const CARGO_CAP=20, VAL=6;
-  const valueAt=(ci,res)=>townPrice(cities[ci],res)*VAL;          // gold/unit = keenest buyer's bid x scale
+  const valueAt=(ci,res)=>townPrice(cities[ci],res)*ECON.tradeVal;   // gold/unit = keenest buyer's bid x scale
   // buy the home's biggest surplus on consignment (goods leave now, paid when sold)
   const loadCargo=ci=>{ const c=cities[ci]; const tally={};
     for(const u of storesOf(c)) for(const r in u.stock){ if(u.stock[r]>0) tally[r]=(tally[r]||0)+u.stock[r]; }
     let best=null,bv=4;
-    for(const r in tally){ const reserve=(r===FOOD)?cityNeed(c)*8:0; const avail=tally[r]-reserve; if(avail>bv){bv=avail;best=r;} }
-    if(!best)return null; const qty=Math.min(CARGO_CAP,Math.floor(bv*0.5));
+    for(const r in tally){ const reserve=(r===FOOD)?cityNeed(c)*ECON.foodReserve:0; const avail=tally[r]-reserve; if(avail>bv){bv=avail;best=r;} }
+    if(!best)return null; const qty=Math.min(ECON.cargoCap,Math.floor(bv*0.5));
     if(qty<=0)return null; townTake(c,best,qty); return {res:best,qty,from:ci}; };
   // sell at the destination: it pays gold (only as much as it can afford & store); the producer earns it
   const unloadCargo=(ci,cargo)=>{ if(!cargo)return; const c=cities[ci];

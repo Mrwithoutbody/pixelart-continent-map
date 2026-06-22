@@ -53,13 +53,13 @@ function placeBuilding(wx,wy){ const x=Math.round(wx),y=Math.round(wy);
   if(c.builds.concat(c.houses).some(o=>Math.abs(o.x-x)<3&&Math.abs(o.y-y)<3)) return flash('miejsce zajęte');
   if(!canAfford(c,buildMode)) return flash(`${c.name}: brak ${missingFor(c,buildMode).join(', ')}`);
   payCost(c,buildMode);
-  const b=makeBuild(buildMode,x,y); c.builds.push(b);
+  const b=makeBuild(buildMode,x,y); c.builds.push(b); invalidateStores();
   c.r=Math.max(c.r,Math.hypot(x-c.x,y-c.y)+1);
   flash(`zbudowano: ${b.name} (${c.name})`);
   exitBuild(); selBuild={ci,b}; selected=ci; infoTab='budynki'; updateInfo(); saveGame();
 }
 function demolishBuild(){ if(!selBuild)return; const c=WORLD.cities[selBuild.ci];
-  const i=c.builds.indexOf(selBuild.b); if(i>=0)c.builds.splice(i,1); selBuild=null; updateInfo(); saveGame(); }
+  const i=c.builds.indexOf(selBuild.b); if(i>=0)c.builds.splice(i,1); invalidateStores(); selBuild=null; updateInfo(); saveGame(); }
 
 // ---- tab switch / building pick (inline onclick targets) ----
 function showTab(t){ infoTab=t; if(t!=='budynki') selBuild=null; updateInfo(); }   // building detail lives only under Budynki
@@ -150,7 +150,7 @@ function priceChips(c,b){ const recs=recipesOf(b.id); const buys=new Set(),sells
 // rebuild a ruined building, paying its build cost again from the town
 function rebuildBuild(){ if(!selBuild)return; const c=WORLD.cities[selBuild.ci],b=selBuild.b; if(!b.ruined)return;
   if(!canAfford(c,b.id)) return flash(`brak: ${missingFor(c,b.id).join(', ')}`);
-  payCost(c,b.id); b.ruined=false; updateInfo(); saveGame(); flash(`odbudowano: ${b.name}`); }
+  payCost(c,b.id); b.ruined=false; invalidateStores(); updateInfo(); saveGame(); flash(`odbudowano: ${b.name}`); }
 // town aggregate goods {res:qty} across every building/dwelling warehouse
 function townGoods(c){ const o={}; for(const u of storesOf(c)) for(const r in u.stock){ if(u.stock[r]>0) o[r]=(o[r]||0)+u.stock[r]; } return o; }
 // production + stockpile sections for a town (Budynki tab)
@@ -329,7 +329,7 @@ function loadGame(){ try{
   regen(data.seed);                                                   // rebuild the deterministic base world
   (data.cities||[]).forEach((sc,i)=>{ const c=WORLD.cities[i]; if(!c)return;
     c.gold=sc.gold||0;
-    c.builds=(sc.builds||[]).map(b=>{const nb=makeBuild(b.id,b.x,b.y); nb.ruined=!!b.ruined; nb.stock=b.stock||{}; return nb;});  // rehydrate stock + ruin state
+    c.builds=(sc.builds||[]).map(b=>{const nb=makeBuild(b.id,b.x,b.y); nb.ruined=!!b.ruined; nb.stock=b.stock||{}; return nb;}); invalidateStores();  // rehydrate stock + ruin state
     for(const h of c.houses) h.stock={};                                  // drop re-seeded household goods (saved goods live in builds)
     for(const b of c.builds) c.r=Math.max(c.r,Math.hypot(b.x-c.x,b.y-c.y)+1); });
   WORLD.layer=data.layer||'rody';

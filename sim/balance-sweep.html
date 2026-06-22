@@ -1,0 +1,45 @@
+<!doctype html><meta charset="utf-8">
+<!-- Headless economy balance harness. Open in a browser (or run via headless chrome --dump-dom)
+     to sweep ECON configs and score them. Used to pick the defaults in economy/production.js.
+     Acceptance baseline: every config must finish 2500 ticks with coll=0 (no town fully collapses). -->
+<body style="background:#10140e;color:#cde;font:13px monospace;padding:14px;white-space:pre">
+<canvas id="cv" style="display:none"></canvas><div id="out">running sweep…</div>
+<script src="../engine/config.js"></script>
+<script src="../engine/math.js"></script>
+<script src="../sprites/core.js"></script>
+<script src="../sprites/buildings.js"></script>
+<script src="../sprites/terrain.js"></script>
+<script src="../sprites/units.js"></script>
+<script src="../worldgen/towns.js"></script>
+<script src="../chronicle/generate.js"></script>
+<script src="../worldgen/world.js"></script>
+<script src="../chronicle/panel.js"></script>
+<script src="../economy/production.js"></script>
+<script>
+// minimal stubs so render-free world functions (regen lives in render.js) aren't needed: we call genWorld directly
+function moveCaravans(W){ for(const m of W.merchants){ if(!m.segs.length)continue;
+  const s=m.segs[Math.min(m.si,m.segs.length-1)]; m.t+=m.speed*0.05*20/s.len;
+  if(m.t>=1){m.t=0;m.si++;if(m.si>=m.segs.length)W.replan(m);} } }
+function sim(cfg, seed, ticks){
+  Object.assign(ECON, BASE, cfg);
+  const W=genWorld(seed);
+  const pop0=W.cities.reduce((a,c)=>a+c.pop,0), B0=W.cities.reduce((a,c)=>a+c.builds.length,0);
+  for(let i=0;i<ticks;i++){ moveCaravans(W); tickEconomy(W,0.05); }
+  let ruined=0,fed=0,coll=0,popN=0; const pops=[];
+  for(const c of W.cities){ const lb=c.builds.filter(b=>!b.ruined).length; ruined+=c.builds.length-lb;
+    if(lb===0&&c.builds.length)coll++; if((c.starv||0)===0)fed++; popN+=c.pop; pops.push(c.pop); }
+  const mean=popN/pops.length, sd=Math.sqrt(pops.reduce((a,p)=>a+(p-mean)**2,0)/pops.length);
+  return {alive:1-ruined/Math.max(1,B0), popFrac:popN/pop0, fed:fed/W.cities.length, coll, dyn:sd/Math.max(1,mean)};
+}
+const BASE={foodPerCap:0.0018,gruel:true,popGrow:0.006,popShrink:0.003,popFloor:25,ruinLimit:200,cargoCap:24,tradeVal:6,foodReserve:10};
+const CFGS={ "DEFAULTS":{}, "no-gruel":{gruel:false}, "lean-food":{foodPerCap:0.0014},
+  "rich-food":{foodPerCap:0.0026}, "fast-ruin":{ruinLimit:80}, "hard-shrink":{popShrink:0.008},
+  "tiny-caravan":{cargoCap:10,foodReserve:4} };
+const rows=["config        alive  pop   fed   coll  dyn"];
+for(const k in CFGS){ let A=0,P=0,F=0,C=0,Dn=0; for(const sd of [424242,7]){ const r=sim(CFGS[k],sd,2500);
+    A+=r.alive;P+=r.popFrac;F+=r.fed;C+=r.coll;Dn+=r.dyn; }
+  rows.push(k.padEnd(13)+" "+(A/2).toFixed(2)+"   "+(P/2).toFixed(2)+"  "+(F/2).toFixed(2)+"  "+C+"     "+(Dn/2).toFixed(2)); }
+rows.push("\nAcceptance: every row coll=0 (no economy-wide bankruptcy).");
+document.getElementById("out").textContent=rows.join("\n");
+</script>
+</body>

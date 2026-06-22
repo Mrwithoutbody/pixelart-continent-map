@@ -1,8 +1,21 @@
 // ECONOMY / PRODUCTION — recipes (raw producers + refiners), build costs, and the economy tick.
 // Needs BLD / ECON_SPR / SPR (config + sprites).
 
+// ---- tunables (mutable so the balance sim can sweep them) ----
+// Balance picked by simulation sweep (sim/balance-sweep): self-correcting, no collapse, lively.
+// Towns settle at their food ceiling (Malthusian) -> food/salt trade always matters; pop ~0.83 of
+// start, 0 town collapses over 2500 ticks across seeds.
+const ECON={
+  foodPerCap:0.0018,     // food eaten per head per tick (main "how fed" lever)
+  gruel:true,            // bakery may run a low-yield unsalted fallback (salt = efficiency, not a death gate)
+  popGrow:0.006,         // pop growth/tick when fed (toward housing capacity)
+  popShrink:0.003,       // pop loss/tick when starving — need falls with pop -> negative feedback, no death spiral
+  popFloor:25,
+  ruinLimit:200,         // ticks of sustained famine before a building is abandoned (long + recoverable)
+  cargoCap:24, tradeVal:6, foodReserve:10,  // caravan: load size, gold/price scale, ticks of food kept home
+};
+
 // recipe per building: out:[res,rate] always; in:[res,rate] for refiners that consume a raw input.
-// chain example: mine -> ruda (raw) ; smelter in:ruda -> out:metal ; only refines when ore is in stock.
 const PROD={
   farm:{out:['zboże',3]},          lumber_camp:{out:['drewno',2]},
   sawmill:{in:['drewno',2],out:['deski',1]},
@@ -10,13 +23,15 @@ const PROD={
   quarry:{out:['kamień',1]},       fishery:{out:['ryby',2]},
   salt_works:{out:['sól',6]},      harbor:{out:['towary',1]},
   market:{out:['złoto',2]},        warehouse:{}, chapel:{}, tower:{},
-  // bakery: turns grain+salt (3:1) OR fish+salt (1:2) into the one edible good. First recipe with stock wins.
+  // bakery: salted recipes (3:1 grain, 1:2 fish) are efficient; unsalted gruel is a lean fallback.
   piekarnia:{recipes:[ {in:[['zboże',3],['sól',1]], out:['jedzenie',3]},
-                       {in:[['ryby',1],['sól',2]],  out:['jedzenie',3]} ]},
+                       {in:[['ryby',1],['sól',2]],  out:['jedzenie',3]},
+                       {in:[['zboże',4]],           out:['jedzenie',1], gruel:true},
+                       {in:[['ryby',2]],            out:['jedzenie',1], gruel:true} ]},
 };
 // normalise any building to a list of recipes [{in:[[res,q],...], out:[res,q]}]
 function recipesOf(id){ const p=PROD[id]; if(!p)return[];
-  if(p.recipes)return p.recipes;
+  if(p.recipes)return ECON.gruel?p.recipes:p.recipes.filter(r=>!r.gruel);
   if(p.out)return [{in:p.in?[p.in]:[], out:p.out}];
   return []; }
 // build cost (paid from the town's stockpile). Raw extractors are cheap; refiners + civic cost more.
@@ -48,9 +63,15 @@ const STORE_DEFAULT=15;
 function buildStore(id){ return STORE[id]??STORE_DEFAULT; }
 function unitCap(u){ return buildStore(u.id||u.btype); }                 // building keys on .id, dwelling on .btype
 function unitUsed(u){ let s=0; const st=u.stock; if(st)for(const r in st)if(st[r]>0)s+=st[r]; return s; }
-// every working warehouse unit in a town: economy buildings (not ruined) + dwellings
-function storesOf(c){ const a=[]; for(const b of (c.builds||[])) if(!b.ruined){ b.stock||(b.stock={}); a.push(b); }
-  for(const h of (c.houses||[])){ h.stock||(h.stock={}); a.push(h); } return a; }
+// every working warehouse unit in a town: economy buildings (not ruined) + dwellings.
+// Memoised per epoch — the unit LIST only changes when a building is built/ruined/demolished,
+// so we cache it and bump the epoch on those events (stock contents are read live off the units).
+let STORES_EPOCH=1;
+function invalidateStores(){ STORES_EPOCH++; }
+function storesOf(c){ if(c._se===STORES_EPOCH && c._stores) return c._stores;
+  const a=[]; for(const b of (c.builds||[])) if(!b.ruined){ b.stock||(b.stock={}); a.push(b); }
+  for(const h of (c.houses||[])){ h.stock||(h.stock={}); a.push(h); }
+  c._stores=a; c._se=STORES_EPOCH; return a; }
 function townHas(c,res){ let s=0; for(const u of storesOf(c)) s+=(u.stock[res]||0); return s; }
 function cityCap(c){ let cap=0; for(const u of storesOf(c)) cap+=unitCap(u); return cap; }
 function cityUsed(c){ let s=0; for(const u of storesOf(c)) s+=unitUsed(u); return s; }
@@ -77,17 +98,23 @@ function canAfford(c,id){ const cost=BUILD_COST[id]||{}; for(const r in cost) if
 function payCost(c,id){ const cost=BUILD_COST[id]||{}; for(const r in cost){ if(r==='złoto')c.gold=(c.gold||0)-cost[r]; else townTake(c,r,cost[r]); } }
 function missingFor(c,id){ const cost=BUILD_COST[id]||{},m=[]; for(const r in cost){ const have=affordHave(c,r); if(have<cost[r])m.push(`${Math.ceil(cost[r]-have)} ${r}`); } return m; }
 
-// ---- people & food: towns eat ONLY 'jedzenie' (baked from grain/fish + salt) ----
+// ---- people & food: towns eat ONLY 'jedzenie'; population grows fed / shrinks starved ----
 const FOOD='jedzenie';
-const FOOD_PER_CAP=0.0025;                           // mouths to feed per head per tick
-const STARVE_LIMIT=30;                               // famine ticks before a building is abandoned (time to fix it)
-const isFood=b=>recipesOf(b.id).some(r=>r.out[0]===FOOD);   // a bakery (priority to keep running)
+const HOUSE_POP={manor:240,townhouse:90,house:45,shack:16};                 // people a dwelling can house
+const FOOD_INPUTS=new Set();                                                // bakery inputs (filled below)
+recipesOf('piekarnia').forEach(r=>r.in.forEach(x=>FOOD_INPUTS.add(x[0])));  // {zboże,sól,ryby}
+const isFood=b=>recipesOf(b.id).some(r=>r.out[0]===FOOD);                   // a bakery
+const feedsTown=b=>{ if(isFood(b))return true; const r0=(PROD[b.id]&&PROD[b.id].out); return !!r0&&FOOD_INPUTS.has(r0[0]); }; // bakery OR its supplier (grain/fish/salt)
+function housingCap(c){ let n=0; for(const h of (c.houses||[])) n+=HOUSE_POP[h.btype]||20; return n; }
 function cityFood(c){ let n=0; for(const b of (c.builds||[])){ if(b.ruined)continue;
   for(const r of recipesOf(b.id)) if(r.out[0]===FOOD){ n+=r.out[1]; break; } } return n; }
-function cityNeed(c){ return (c.pop||0)*FOOD_PER_CAP; }
+function cityNeed(c){ return (c.pop||0)*ECON.foodPerCap; }
 function feedCity(c){ const need=cityNeed(c), got=townTake(c,FOOD,need); return got>=need-1e-4; }
+// abandon one building when famine is chronic: spare the food chain, hand its goods to the rest of town
 function ruinOne(c){ const live=(c.builds||[]).filter(b=>!b.ruined); if(!live.length)return;
-  const t=live.find(b=>!isFood(b))||live[0]; t.ruined=true; }
+  const t=live.find(b=>!feedsTown(b))||live.find(b=>!isFood(b))||live[0];
+  const s=t.stock||{}; t.ruined=true; invalidateStores();
+  for(const r in s){ if(s[r]>0) townGive(c,r,s[r]); }  t.stock={}; }              // redistribute, don't vaporise
 
 // production: each working building runs the first recipe the TOWN can supply; output lands in that
 // building first (so its own price reflects what it makes), spilling into town storage when full.
@@ -105,10 +132,11 @@ function tickEconomy(world,dt){
         const space=cap-used; if(space<=0)break;                                                         // full -> output spoils
         for(const[ir,iq]of rec.in){ townTake(c,ir,iq); used-=iq; }
         const stored=townGive(c,or_,Math.min(oq,space),b); used+=stored; break; } }                      // one recipe per tick
-    // everyone eats; sustained shortage thins the population and abandons a building
-    if(feedCity(c)) c.starv=Math.max(0,(c.starv||0)-1);
-    else { c.starv=(c.starv||0)+1; c.pop=Math.max(40,Math.round((c.pop||0)*0.997));
-      if(c.starv>=STARVE_LIMIT){ ruinOne(c); c.starv=Math.floor(STARVE_LIMIT/2); } } }
+    // everyone eats; fed -> population grows toward housing, starved -> it shrinks (need falls with it)
+    if(feedCity(c)){ c.starv=Math.max(0,(c.starv||0)-2);
+      const hc=housingCap(c); if(c.pop<hc) c.pop=Math.min(hc, (c.pop||0)*(1+ECON.popGrow)+0.2); }
+    else { c.starv=(c.starv||0)+1; c.pop=Math.max(ECON.popFloor,(c.pop||0)*(1-ECON.popShrink));
+      if(c.starv>=ECON.ruinLimit){ ruinOne(c); c.starv=Math.floor(ECON.ruinLimit*0.6); } } }
   return true;
 }
 // per-tick gross output of a town (resource -> rate), for the info panel (working buildings only).
