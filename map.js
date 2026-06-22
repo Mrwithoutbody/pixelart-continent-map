@@ -367,32 +367,38 @@ cv.addEventListener('mousedown',e=>{drag={sx:e.clientX,sy:e.clientY,cx:cam.x,cy:
 addEventListener('mouseup',e=>{ if(downPos){const dx=e.clientX-downPos.x,dy=e.clientY-downPos.y; if(dx*dx+dy*dy<16) pickCity(e.clientX,e.clientY);} drag=null;downPos=null;});
 addEventListener('mousemove',e=>{if(!drag)return;cam.x=drag.cx-(e.clientX-drag.sx)/cam.zoom;cam.y=drag.cy-(e.clientY-drag.sy)/cam.zoom;clampCam();});
 
-// ---- selection + city info panel ----
+// ---- selection + city info panel (GUI markup lives in index.html #info) ----
 let selected=null;
 const BIOME_NAME=['ocean','płycizna','plaża','pustynia','trawa','las','wzgórza','góry'];
 const RES_NAME={manor:'Dwór',townhouse:'Kamienica',house:'Dom',shack:'Chata'};
-const info=document.createElement('div'); info.id='info';
-info.style.cssText='position:fixed;top:10px;right:10px;min-width:160px;color:#e8f0e0;background:#0b0d0bdd;'
-  +'border:1px solid #3c4a36;border-radius:8px;padding:10px 12px;font:12px/1.7 monospace;display:none;z-index:5';
-document.body.appendChild(info);
+const info=document.getElementById('info');
+function clearCity(){selected=null;updateInfo();}        // exposed for the panel close button
 function pickCity(sx,sy){ if(!WORLD)return; const[wx,wy]=s2w(sx,sy); let best=null,bd=1e9;
   for(let i=0;i<WORLD.cities.length;i++){const c=WORLD.cities[i],d=Math.hypot(c.x-wx,c.y-wy);
     if(d<c.r+3 && d<bd){bd=d;best=i;}}
   selected=best; updateInfo(); }
-function updateInfo(){ if(selected==null||!WORLD){info.style.display='none';return;}
+function updateInfo(){
+  if(selected==null||!WORLD){info.classList.remove('open');document.body.classList.remove('has-info');return;}
   const c=WORLD.cities[selected],f=FACTIONS[c.f];
   const comp={}; for(const h of c.houses) comp[h.btype]=(comp[h.btype]||0)+1;
-  const compRows=['manor','townhouse','house','shack'].filter(k=>comp[k])
-    .map(k=>`&nbsp;&nbsp;${RES_NAME[k]}: <b>${comp[k]}</b>`).join('<br>');
-  info.style.display='block';
-  info.innerHTML=`<b style="font-size:13px">${c.name}</b>`
-    +`<br><span style="display:inline-block;width:9px;height:9px;background:${f.flag};border:1px solid #000;vertical-align:-1px"></span> ${f.name}`
-    +(c.port?`&nbsp;⚓`:'')
-    +`<br>populacja: <b>${c.pop.toLocaleString('pl')}</b>`
-    +`<br>biom: ${BIOME_NAME[WORLD.biomeAt(c.x,c.y)]} · drogi: ${WORLD.adj[selected].length}`
-    +`<br><span style="opacity:.7">mieszkalne (${c.houses.length}):</span><br>${compRows}`
-    +`<br><span style="opacity:.7">gospodarka (${c.builds.length}):</span><br>&nbsp;&nbsp;${c.builds.length?c.builds.map(b=>b.name).join('<br>&nbsp;&nbsp;'):'—'}`
-    +`<br><span style="opacity:.5">klik na pustym = odznacz</span>`; }
+  const resRows=['manor','townhouse','house','shack'].filter(k=>comp[k])
+    .map(k=>`<div class="li"><span>${RES_NAME[k]}</span><span>${comp[k]}</span></div>`).join('');
+  const ecoRows=c.builds.length
+    ? c.builds.map(b=>`<div class="li eco"><span>${b.name}</span><span>·</span></div>`).join('')
+    : `<div class="li eco"><span>—</span><span></span></div>`;
+  info.innerHTML=
+    `<div class="ihead"><span class="nm">${c.name}</span><span class="x" onclick="clearCity()">✕</span></div>`
+   +`<div class="ibody">`
+   + `<div class="fac"><span class="sw" style="background:${f.flag}"></span>${f.name}`
+   +   (c.port?` <span class="port">⚓ port</span>`:'')+`</div>`
+   + `<div class="stat"><span>populacja</span><b>${c.pop.toLocaleString('pl')}</b></div>`
+   + `<div class="stat"><span>biom</span><b>${BIOME_NAME[WORLD.biomeAt(c.x,c.y)]}</b></div>`
+   + `<div class="stat"><span>drogi</span><b>${WORLD.adj[selected].length}</b></div>`
+   + `<div class="sect">mieszkalne (${c.houses.length})</div><div class="list">${resRows}</div>`
+   + `<div class="sect">gospodarka (${c.builds.length})</div><div class="list">${ecoRows}</div>`
+   +`</div>`;
+  info.classList.add('open');document.body.classList.add('has-info');
+}
 cv.addEventListener('wheel',e=>{e.preventDefault();const[wx,wy]=s2w(e.clientX,e.clientY);
   cam.zoom*=e.deltaY<0?1.12:1/1.12;clampCam();const[nx,ny]=s2w(e.clientX,e.clientY);cam.x+=wx-nx;cam.y+=wy-ny;clampCam();},{passive:false});
 
@@ -469,9 +475,12 @@ function tick(now){const dt=Math.min(0.05,(now-last)/1000);last=now;
   render();requestAnimationFrame(tick);}
 
 // ---------- boot ----------
+// regen builds a fresh world (used by the generating screen + in-game "new map").
 function regen(seed){WORLD=genWorld(typeof seed==='number'?seed:(Math.random()*1e9|0));clampCam();
   selected=null;updateInfo();
   const el=document.getElementById('seed');if(el)el.textContent=WORLD.seed;}
-addEventListener('keydown',e=>{if(e.key==='r'||e.key==='R')regen();});
-buildSprites(); regen(12345); requestAnimationFrame(tick);
-if(location.search.includes("sel")){let bi=0;WORLD.cities.forEach((c,i)=>{if(c.pop>WORLD.cities[bi].pop)bi=i;});selected=bi;const c=WORLD.cities[bi];cam.x=c.x;cam.y=c.y;cam.zoom=9;clampCam();updateInfo();}
+// R = new map, but only while playing (start/gen screens own the keyboard otherwise).
+addEventListener('keydown',e=>{if((e.key==='r'||e.key==='R')&&document.body.dataset.screen==='game')regen();});
+buildSprites();
+regen(Math.random()*1e9|0);          // a world to sit behind the start screen as a live backdrop
+requestAnimationFrame(tick);          // render loop always runs; UI overlays sit on top
