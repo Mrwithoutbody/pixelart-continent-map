@@ -1,0 +1,47 @@
+<!doctype html><meta charset="utf-8">
+<!-- COMMITTED SMOKE TEST. Open in a browser, or headless:
+       google-chrome --headless --allow-file-access-from-files --dump-dom test/smoke.html | grep -o '<title>[^<]*'
+     (the flag is needed so window.onerror sees real messages across file:// scripts) before committing.
+     Loads the FULL stack (so render/ui ReferenceErrors surface too), hooks window.onerror,
+     boots a world, runs 600 ticks with devCheck, opens every panel type, checks save.
+     PASS in the title/#out = no config drift, no runtime invariant breach, all panels render. -->
+<body data-screen="start" style="background:#10140e;color:#cde;font:13px monospace">
+<canvas id="cv"></canvas>
+<div id="hud"><b id="scenario"></b><b id="seed"></b>
+  <button class="lyr" data-l="rody"></button><button class="lyr" data-l="gildie"></button>
+  <button class="lyr" data-l="wiary"></button><button class="lyr" data-l="ceny"></button></div>
+<div id="info"></div><div id="toast"></div><div id="buildbar"></div><div id="chronicle"></div>
+<div id="pricepick"></div><button id="btnContinue"></button>
+<div id="screen-start"><input id="seedIn"></div>
+<div id="screen-gen"><i id="gen-bar"></i><span id="gen-status"></span></div>
+<pre id="out">running…</pre>
+<script>var SMOKE_FAILS=[]; window.onerror=(m)=>{SMOKE_FAILS.push('JS: '+m);};</script>
+<script src="../engine/config.js"></script><script src="../engine/math.js"></script>
+<script src="../sprites/core.js"></script><script src="../sprites/buildings.js"></script>
+<script src="../sprites/terrain.js"></script><script src="../sprites/units.js"></script>
+<script src="../sprites/icons.js"></script>
+<script src="../worldgen/towns.js"></script><script src="../chronicle/generate.js"></script>
+<script src="../worldgen/world.js"></script><script src="../chronicle/panel.js"></script>
+<script src="../economy/production.js"></script><script src="../render/render.js"></script><script src="../ui/ui.js"></script>
+<script>
+addEventListener('load',()=>setTimeout(()=>{ const F=SMOKE_FAILS; const ok=(c,m)=>{ if(!c)F.push(m); };
+  try{
+    regen(424242);
+    for(let i=0;i<600;i++){ for(const m of WORLD.merchants){ if(m.dead||!m.segs.length||m.si>=m.segs.length)continue;
+        const s=m.segs[m.si]; m.t+=m.speed*0.05*20/s.len; if(m.t>=1){m.t=0;m.si++;if(m.si>=m.segs.length)WORLD.replan(m);} }
+      if(tickEconomy(WORLD,0.05)) devCheck(WORLD); }
+    const c=WORLD.cities[0];
+    selected=0; selBuild=selHouse=selMerchant=null;
+    infoTab='miasto';  updateInfo(); ok(info.innerHTML.includes(c.name),'panel Miasto pusty');
+    infoTab='budynki'; updateInfo(); ok(info.innerHTML.includes('mieszkalne'),'panel Budynki bez domów');
+    infoTab='rynek';   updateInfo(); ok(/rynek/i.test(info.innerHTML),'panel Rynek pusty');
+    if(c.builds[0]){ selBuild={ci:0,b:c.builds[0]}; infoTab='budynki'; updateInfo(); ok(info.innerHTML.includes('magazyn'),'detal budynku'); selBuild=null; }
+    if(c.houses[0]){ selHouse={ci:0,h:c.houses[0]}; updateInfo(); ok(info.innerHTML.includes('właściciel'),'detal domu'); selHouse=null; }
+    const mm=WORLD.merchants.find(x=>!x.dead); if(mm){ selMerchant=mm; updateInfo(); ok(info.innerHTML.includes('Karawana'),'panel karawany'); selMerchant=null; }
+    selected=null; updateInfo(); saveGame(); ok(hasSave(),'save nie zapisał');
+  }catch(e){ F.push('EXC: '+e.message); }
+  document.title = F.length ? ('FAIL '+F.length+': '+F[0]) : 'PASS — smoke ok';
+  document.getElementById('out').textContent = document.title + (F.length?'\n'+F.join('\n'):'');
+},250));
+</script>
+</body>

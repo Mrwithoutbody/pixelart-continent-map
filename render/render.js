@@ -374,7 +374,7 @@ function tick(now){const dt=Math.min(0.05,(now-last)/1000);last=now;
   for(const m of WORLD.merchants){ if(m.dead||!m.segs.length||m.si>=m.segs.length)continue;   // skip bankrupt/finished until reaped
     const s=m.segs[m.si]; m.t+=m.speed*dt*20/s.len;
     if(m.t>=1){ m.t=0; m.si++; if(m.si>=m.segs.length) WORLD.replan(m); }}
-  if(tickEconomy(WORLD,dt) && (selected!=null||selBuild)) updateInfo();   // refresh open panel each econ tick
+  if(tickEconomy(WORLD,dt)){ devCheck(WORLD); if(selected!=null||selBuild) updateInfo(); }   // invariants + panel refresh each econ tick
   render();requestAnimationFrame(tick);}
 
 // ---------- boot ----------
@@ -415,4 +415,5 @@ function loadGame(){ try{
 }catch(e){ return false; } }
 
 buildSprites();
+validateConfig();                     // fail loudly at boot on any config drift (missing cost/store/icon, bad recipe)
 requestAnimationFrame(tick);          // render loop runs idle until New Game / Continue builds a world

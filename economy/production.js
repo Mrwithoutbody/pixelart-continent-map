@@ -26,7 +26,7 @@ const PROD={
   quarry:{out:['kamień',1]},       fishery:{out:['ryby',2]},
   salt_works:{out:['sól',6]},      harbor:{out:['towary',1]},
   hunter:{out:['mięso',2], out2:['futra',1]},     // forest: meat (food) + furs (raw hide)
-  garbarnia:{in:[['futra',2]], out:['skóry',1]},  // tannery: furs -> leather (a trade good)
+  garbarnia:{in:['futra',2], out:['skóry',1]},    // tannery: furs -> leather (a trade good)
   market:{out:['złoto',2]},        warehouse:{}, chapel:{}, tower:{},
   // bakery: salted recipes (grain/fish/meat + salt) are efficient; unsalted gruel is a lean fallback.
   piekarnia:{recipes:[ {in:[['zboże',3],['sól',1]], out:['jedzenie',3]},
@@ -213,3 +213,29 @@ function tickEconomy(world,dt){
 function cityOutputs(c){ const o={}; for(const b of c.builds){ if(b.ruined)continue;
   const r=recipesOf(b.id)[0]; if(r){ const[or_,oq]=r.out; o[or_]=(o[or_]||0)+oq;
     if(r.out2)o[r.out2[0]]=(o[r.out2[0]]||0)+r.out2[1]; } } return o; }
+
+// ============================================================
+//  SELF-CHECKS — make drift/bugs scream AT THE SOURCE instead of 10 edits later.
+//  Convention (helpers) gets bypassed; enforcement doesn't. RESOURCES is the one
+//  list every good must be in; validateConfig() runs at boot, devCheck() each tick.
+// ============================================================
+const RESOURCES=new Set(['zboże','ryby','mięso','sól','jedzenie','drewno','kamień','ruda','metal','deski','futra','skóry','towary','złoto']);
+let DEV=true;
+function validateConfig(){ const e=[];
+  for(const id in PROD){ for(const r of recipesOf(id)){
+      for(const x of r.in) if(!RESOURCES.has(x[0])) e.push(`${id}: nieznane wejście "${x[0]}"`);
+      for(const o of [r.out,r.out2]) if(o&&!RESOURCES.has(o[0])) e.push(`${id}: nieznane wyjście "${o[0]}"`); }
+    if(!(id in STORE)) e.push(`${id}: brak wpisu STORE`); }
+  for(const o of BUILDABLE) if(!BUILD_COST[o.id]) e.push(`${o.id}: brak BUILD_COST`);
+  if(typeof ICON_URL!=='undefined') for(const r of RESOURCES) if(r!=='złoto'&&!ICON_URL[r]) e.push(`brak ikony: ${r}`);
+  if(e.length){ console.error('CONFIG DRIFT:',e); if(DEV) throw new Error('Niespójna konfiguracja: '+e[0]); }
+  return e; }
+// runtime invariants (cheap; once per economy tick in dev). Throws with context on the first breach.
+function devCheck(world){ if(!DEV||!world)return;
+  for(const m of world.merchants){ if(m.dead)continue;
+    if(!m.segs||m.si>=m.segs.length) throw new Error(`karawana #${m.id}: si=${m.si} poza segs(${m.segs?m.segs.length:'brak'})`);
+    if(!Number.isFinite(m.gold)) throw new Error(`karawana #${m.id}: gold=${m.gold}`); }
+  for(const c of world.cities){ if(!Number.isFinite(c.gold)) throw new Error(`${c.name}: gold=${c.gold}`);
+    for(const u of storesOf(c)) for(const r in u.stock){
+      if(!RESOURCES.has(r)) throw new Error(`${c.name}: nieznany towar "${r}"`);
+      if(u.stock[r]<-1e-6) throw new Error(`${c.name}: ujemny ${r}=${u.stock[r]}`); } } }
