@@ -113,7 +113,7 @@ function caravanPanel(){ const m=selMerchant; if(!m||m.dead||!WORLD.merchants.in
 }
 // dwelling inspector
 function houseDetail(c,h){
-  const keys=Object.keys(h.stock||{}).filter(r=>h.stock[r]>0);
+  const keys=Object.keys(h.stock||{}).filter(r=>h.stock[r]>=1);
   const skl=keys.length? keys.map(r=>`<div class="li"><span>${resIcon(r)}${r}</span><span>${Math.floor(h.stock[r])}</span></div>`).join('')
     : `<div class="li eco"><span>pusto</span><span></span></div>`;
   openPanel(`<div class="ihead"><span class="nm">${c.name}</span><span class="x" onclick="clearCity()">✕</span></div>`
@@ -208,7 +208,7 @@ function recipeRows(b,c){ const recs=recipesOf(b.id); let h='';
   if(recs.length) h+=recs.map(r=>{ const lhs=r.in.length?r.in.map(x=>`${x[1]} ${x[0]}`).join(' + '):'produkuje';
     const rhs=`${r.out[1]} ${r.out[0]}`+(r.out2?` + ${r.out2[1]} ${r.out2[0]}`:'');
     return `<div class="stat"><span>${lhs}</span><b>→ ${rhs}/turę</b></div>`; }).join('');
-  const keys=Object.keys(b.stock||{}).filter(r=>b.stock[r]>0);
+  const keys=Object.keys(b.stock||{}).filter(r=>b.stock[r]>=1);
   h+=`<div class="sect">skład budynku</div>`+(keys.length
     ? keys.map(r=>`<div class="li"><span>${resIcon(r)}${r}</span><span>${Math.floor(b.stock[r])}</span></div>`).join('')
     : `<div class="li eco"><span>pusto</span><span></span></div>`);
@@ -231,7 +231,7 @@ function townGoods(c){ const o={}; for(const u of storesOf(c)) for(const r in u.
 function prodRows(c){
   const out=cityOutputs(c), ok=Object.keys(out);
   const prod = ok.length ? ok.map(r=>`<div class="li eco"><span>${r}</span><span>+${out[r]}/turę</span></div>`).join('') : '';
-  const st=townGoods(c), sk=Object.keys(st).filter(r=>st[r]>0);
+  const st=townGoods(c), sk=Object.keys(st).filter(r=>st[r]>=1);
   const stock = sk.length ? sk.map(r=>`<div class="li"><span>${resIcon(r)}${r}</span><span>${Math.floor(st[r])}</span></div>`).join('') : `<div class="li eco"><span>pusto</span><span></span></div>`;
   const cap=cityCap(c), used=Math.floor(cityUsed(c)), pct=cap?Math.min(100,Math.round(used/cap*100)):0;
   return (prod?`<div class="sect">produkcja</div><div class="list">${prod}</div>`:'')
