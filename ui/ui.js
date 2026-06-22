@@ -63,8 +63,13 @@ const UI=(()=>{
     toStart(){ clearCity(); document.getElementById('chronicle').classList.remove('open'); refreshContinue(); setScreen('start'); },
     toGame(){ setScreen('game'); },
     toggleChronicle(){ const el=document.getElementById('chronicle'); renderChronicle(); el.classList.toggle('open'); },
-    setLayer(k){ if(WORLD)WORLD.layer=k;                                  // switch the map overlay (Houses/guilds/faiths)
-      document.querySelectorAll('.lyr').forEach(b=>b.classList.toggle('on',b.dataset.l===k)); },
+    setLayer(k){ if(WORLD)WORLD.layer=k;                                  // switch the map overlay (Houses/guilds/faiths/ceny)
+      document.querySelectorAll('.lyr').forEach(b=>b.classList.toggle('on',b.dataset.l===k));
+      const pp=document.getElementById('pricepick'); if(pp){ pp.style.display = k==='ceny'?'flex':'none';
+        if(k==='ceny'&&!pp.dataset.built){ pp.dataset.built='1';
+          pp.innerHTML=['sól','jedzenie','zboże','ryby','drewno','kamień','metal','deski']
+            .map(r=>`<button class="pg${r===priceGood?' on':''}" data-pg="${r}" onclick="UI.setPriceGood('${r}')">${r}</button>`).join(''); } } },
+    setPriceGood(r){ priceGood=r; document.querySelectorAll('.pg').forEach(b=>b.classList.toggle('on',b.dataset.pg===r)); },
     toggleBuild(){ const bb=document.getElementById('buildbar');
       if(bb.classList.contains('open')){ bb.classList.remove('open'); exitBuild(); return; }
       bb.innerHTML=`<div class="bt">BUDUJ<span class="x" onclick="UI.toggleBuild()">✕</span></div>`

@@ -62,7 +62,7 @@ function demolishBuild(){ if(!selBuild)return; const c=WORLD.cities[selBuild.ci]
   const i=c.builds.indexOf(selBuild.b); if(i>=0)c.builds.splice(i,1); selBuild=null; updateInfo(); saveGame(); }
 
 // ---- tab switch / building pick (inline onclick targets) ----
-function showTab(t){ infoTab=t; if(t==='miasto') selBuild=null; updateInfo(); }
+function showTab(t){ infoTab=t; if(t!=='budynki') selBuild=null; updateInfo(); }   // building detail lives only under Budynki
 function pickBuild(bi){ const c=WORLD.cities[selected]; if(!c||!c.builds[bi])return;
   selBuild={ci:selected,b:c.builds[bi]}; infoTab='budynki'; updateInfo(); }
 function unpickBuild(){ selBuild=null; updateInfo(); }
@@ -76,8 +76,9 @@ function updateInfo(){
    +`<div class="tabs">`
    + `<span class="tab${infoTab==='miasto'?' on':''}" onclick="showTab('miasto')">Miasto</span>`
    + `<span class="tab${infoTab==='budynki'?' on':''}" onclick="showTab('budynki')">Budynki (${c.builds.length})</span>`
+   + `<span class="tab${infoTab==='rynek'?' on':''}" onclick="showTab('rynek')">Rynek</span>`
    +`</div>`
-   +`<div class="ibody">`+(infoTab==='budynki'?buildsTab(c):cityTab(c))+`</div>`;
+   +`<div class="ibody">`+(infoTab==='budynki'?buildsTab(c):infoTab==='rynek'?rynekTab(c):cityTab(c))+`</div>`;
   info.classList.add('open');document.body.classList.add('has-info');
 }
 function cityTab(c){ const f=FACTIONS[c.f];
@@ -90,7 +91,7 @@ function cityTab(c){ const f=FACTIONS[c.f];
    +   (c.seat?` <span class="port">★ stolica</span>`:'')+(c.port?` <span class="port">⚓ port</span>`:'')+`</div>`
    + (house?`<div class="stat"><span>włada</span><b>${house.title} ${house.ruler.full}</b></div>`:'')
    + `<div class="stat"><span>populacja</span><b>${c.pop.toLocaleString('pl')}</b></div>`
-   + `<div class="stat"><span>skarb</span><b>${Math.floor((c.stock||{})['złoto']||0)} złota</b></div>`
+   + `<div class="stat"><span>skarb</span><b>${Math.floor(c.gold||0)} złota</b></div>`
    + foodStat(c)
    + `<div class="stat"><span>gospodarka</span><b>${c.role||'—'}</b></div>`
    + `<div class="stat"><span>gildia</span><b style="color:${guild?guild.color:'inherit'}">${guild?guild.name:'—'}</b></div>`
@@ -121,34 +122,61 @@ function buildingDetail(c,b){ const p=PROD[b.id]||{};
    + `<button class="btn sm" style="margin-top:6px;width:100%" onclick="rebuildBuild()">⚒ Odbuduj (${costStr(b.id)})</button>`
    + `<button class="btn sm ghost" style="margin-top:6px;width:100%" onclick="demolishBuild()">✕ Rozbierz</button>`;
   return head
-   + `<div class="stat"><span>magazyn</span><b>+${buildStore(b.id)} miejsca</b></div>`
-   + recipeRows(b.id,c)
+   + `<div class="stat"><span>magazyn</span><b>${Math.floor(unitUsedOf(b))}/${buildStore(b.id)}</b></div>`
+   + recipeRows(b,c)
+   + priceChips(c,b)
    + `<div class="stat"><span>biom</span><b>${BIOME_NAME[WORLD.biomeAt(b.x,b.y)]}</b></div>`
    + `<div class="sect">akcje</div><div class="li eco"><span>zadania — wkrótce</span><span></span></div>`
    + `<button class="btn sm ghost" style="margin-top:10px;width:100%" onclick="demolishBuild()">✕ Rozbierz</button>`;
 }
-// recipe(s) of a building as "inputs → output/turę" rows, plus current input stock
-function recipeRows(id,c){ const recs=recipesOf(id); if(!recs.length)return '';
-  const ins=new Set(); recs.forEach(r=>r.in.forEach(x=>ins.add(x[0])));
-  let h=recs.map(r=>{ const lhs=r.in.length?r.in.map(x=>`${x[1]} ${x[0]}`).join(' + '):'produkuje';
+const unitUsedOf=u=>{ let s=0; if(u.stock)for(const r in u.stock)if(u.stock[r]>0)s+=u.stock[r]; return s; };
+// recipe(s) of a building as "inputs → output/turę", plus THIS building's own warehouse contents
+function recipeRows(b,c){ const recs=recipesOf(b.id); let h='';
+  if(recs.length) h+=recs.map(r=>{ const lhs=r.in.length?r.in.map(x=>`${x[1]} ${x[0]}`).join(' + '):'produkuje';
     return `<div class="stat"><span>${lhs}</span><b>→ ${r.out[1]} ${r.out[0]}/turę</b></div>`; }).join('');
-  for(const r of ins) h+=`<div class="li eco"><span>${r} w magazynie</span><span>${Math.floor((c.stock||{})[r]||0)}</span></div>`;
+  const keys=Object.keys(b.stock||{}).filter(r=>b.stock[r]>0);
+  h+=`<div class="sect">skład budynku</div>`+(keys.length
+    ? keys.map(r=>`<div class="li"><span>${r}</span><span>${Math.floor(b.stock[r])}</span></div>`).join('')
+    : `<div class="li eco"><span>pusto</span><span></span></div>`);
   return h; }
-// rebuild a ruined building, paying its build cost again from the town stock
+// this building's own bid/ask prices (pure exchange) — color-coded, no raw math thrust at the player
+function priceChips(c,b){ const recs=recipesOf(b.id); const buys=new Set(),sells=new Set();
+  recs.forEach(r=>{ r.in.forEach(x=>buys.add(x[0])); if(r.out)sells.add(r.out[0]); });
+  if(!buys.size&&!sells.size)return '';
+  const chip=(r,kind)=>{ const p=priceB(b,r); const hot=p>=2; const col=kind==='buy'?(hot?'var(--red)':'var(--parch2)'):(hot?'var(--gold)':'var(--green)');
+    return `<span class="pchip" style="color:${col}">${kind==='buy'?'kupuje':'sprzedaje'} ${r} <b>${p.toFixed(1)}</b></span>`; };
+  return `<div class="sect">ceny budynku</div><div class="chips">`
+    +[...buys].map(r=>chip(r,'buy')).join('')+[...sells].map(r=>chip(r,'sell')).join('')+`</div>`; }
+// rebuild a ruined building, paying its build cost again from the town
 function rebuildBuild(){ if(!selBuild)return; const c=WORLD.cities[selBuild.ci],b=selBuild.b; if(!b.ruined)return;
   if(!canAfford(c,b.id)) return flash(`brak: ${missingFor(c,b.id).join(', ')}`);
   payCost(c,b.id); b.ruined=false; updateInfo(); saveGame(); flash(`odbudowano: ${b.name}`); }
-// production + stockpile sections for a town
+// town aggregate goods {res:qty} across every building/dwelling warehouse
+function townGoods(c){ const o={}; for(const u of storesOf(c)) for(const r in u.stock){ if(u.stock[r]>0) o[r]=(o[r]||0)+u.stock[r]; } return o; }
+// production + stockpile sections for a town (Budynki tab)
 function prodRows(c){
   const out=cityOutputs(c), ok=Object.keys(out);
   const prod = ok.length ? ok.map(r=>`<div class="li eco"><span>${r}</span><span>+${out[r]}/turę</span></div>`).join('') : '';
-  const st=c.stock||{}, sk=Object.keys(st).filter(r=>st[r]>0);
+  const st=townGoods(c), sk=Object.keys(st).filter(r=>st[r]>0);
   const stock = sk.length ? sk.map(r=>`<div class="li"><span>${r}</span><span>${Math.floor(st[r])}</span></div>`).join('') : `<div class="li eco"><span>pusto</span><span></span></div>`;
-  const cap=cityCap(c), used=Math.floor(cityUsed(c)), pct=Math.min(100,Math.round(used/cap*100));
+  const cap=cityCap(c), used=Math.floor(cityUsed(c)), pct=cap?Math.min(100,Math.round(used/cap*100)):0;
   return (prod?`<div class="sect">produkcja</div><div class="list">${prod}</div>`:'')
-       + `<div class="sect">skarbiec <span class="capn${pct>=90?' full':''}">${used}/${cap}</span></div>`
+       + `<div class="sect">magazyn miasta <span class="capn${pct>=90?' full':''}">${used}/${cap}</span></div>`
        + `<div class="cap${pct>=90?' full':''}"><i style="width:${pct}%"></i></div>`
        + `<div class="list">${stock}</div>`;
+}
+// RYNEK tab: each traded good with the town's going price + a heat bar (the giełda at a glance)
+function rynekTab(c){
+  const goods=['jedzenie','zboże','ryby','sól','drewno','kamień','deski','ruda','metal','towary'];
+  const st=townGoods(c);
+  const rows=goods.map(r=>{ const price=townPrice(c,r), have=Math.floor(st[r]||0);
+    const pct=Math.min(100,Math.round(price/5*100)), hot=price>=2;
+    return `<div class="mrow"><span class="mname">${r}</span>`
+      +`<span class="mbar"><i class="${hot?'hot':''}" style="width:${pct}%"></i></span>`
+      +`<span class="mprice${hot?' hot':''}">${price.toFixed(1)}</span>`
+      +`<span class="mhave">${have}</span></div>`; }).join('');
+  return `<div class="sect">rynek — cena · zapas</div><div class="mkt">${rows}</div>`
+    + `<div class="hint">czerwone = drogo (brak + popyt) · zielone = tanio. Cenę dyktuje budynek, który najbardziej chce dane dobro.</div>`;
 }
 cv.addEventListener('wheel',e=>{e.preventDefault();const[wx,wy]=s2w(e.clientX,e.clientY);
   cam.zoom*=e.deltaY<0?1.12:1/1.12;clampCam();const[nx,ny]=s2w(e.clientX,e.clientY);cam.x+=wx-nx;cam.y+=wy-ny;clampCam();},{passive:false});
@@ -209,7 +237,7 @@ function render(){
   ctx.fillStyle=PAL.deep;ctx.fillRect(0,0,cv.width,cv.height);
   const[ox,oy]=w2s(0,0), DX=Math.round(ox),DY=Math.round(oy),DW=Math.ceil(W*cam.zoom),DH=Math.ceil(H*cam.zoom);
   ctx.drawImage(WORLD.base,0,0,W,H,DX,DY,DW,DH);                              // terrain
-  ctx.drawImage(WORLD.layers[WORLD.layer],0,0,W,H,DX,DY,DW,DH);              // allegiance overlay (Houses/guilds/faiths)
+  if(WORLD.layers[WORLD.layer]) ctx.drawImage(WORLD.layers[WORLD.layer],0,0,W,H,DX,DY,DW,DH);   // allegiance overlay
   const vb=viewBounds();
   for(const f of WORLD.fields) if(f.x>=vb.x0&&f.x<=vb.x1&&f.y>=vb.y0&&f.y<=vb.y1) blit(f.spr,f.x,f.y,false); // flat ground, no shadow
   drawBridges();   // wooden decks under the road dashes
@@ -248,9 +276,18 @@ function render(){
   if(selBuild){ const b=selBuild.b,[bx,by]=w2s(b.x,b.y),r=Math.max(6,2.2*cam.zoom),lw=Math.max(2,Math.round(cam.zoom*0.9));
     ctx.strokeStyle='#ffe066';ctx.lineWidth=lw;ctx.lineJoin='miter';ctx.setLineDash([]);
     ctx.strokeRect(Math.round(bx-r), Math.round(by-r*1.7), Math.round(r*2), Math.round(r*2)); }   // tight bracket on the picked building
+  if(WORLD.layer==='ceny') drawPriceLayer();
   drawPorts();
   drawLabels();
 }
+// price-heat overlay: tint each town by its going price for the selected good (green cheap -> red dear)
+let priceGood='sól';
+function priceHeat(t){ const r=Math.round(70+t*170), g=Math.round(185-t*150), b=70; return `rgb(${r},${g},${b})`; }
+function drawPriceLayer(){ const vb=viewBounds();
+  for(const c of WORLD.cities){ if(c.x<vb.x0||c.x>vb.x1||c.y<vb.y0||c.y>vb.y1)continue;
+    const p=townPrice(c,priceGood), t=Math.max(0,Math.min(1,(p-0.25)/3.75)), [sx,sy]=w2s(c.x,c.y), R=Math.max(7,cam.zoom*3.4);
+    ctx.globalAlpha=0.6; ctx.fillStyle=priceHeat(t); ctx.beginPath(); ctx.arc(sx,sy,R,0,6.2832); ctx.fill();
+    ctx.globalAlpha=1; ctx.lineWidth=Math.max(1,cam.zoom*0.4); ctx.strokeStyle=OUTL; ctx.stroke(); } }
 
 // ============================================================
 //  LOOP
@@ -283,15 +320,17 @@ function hasSave(){ try{ return !!localStorage.getItem(SAVE_KEY); }catch(e){ ret
 function saveGame(){ if(!WORLD)return; try{
   const data={ seed:WORLD.seed, layer:WORLD.layer||'rody',
     cam:{x:cam.x,y:cam.y,zoom:cam.zoom},
-    cities:WORLD.cities.map(c=>({ stock:c.stock||{}, builds:(c.builds||[]).map(b=>({id:b.id,x:b.x,y:b.y,ruined:!!b.ruined})) })) };
+    cities:WORLD.cities.map(c=>({ gold:c.gold||0,
+      builds:(c.builds||[]).map(b=>({id:b.id,x:b.x,y:b.y,ruined:!!b.ruined,stock:b.stock||{}})) })) };
   localStorage.setItem(SAVE_KEY, JSON.stringify(data));
 }catch(e){} }
 function loadGame(){ try{
   const data=JSON.parse(localStorage.getItem(SAVE_KEY)||'null'); if(!data)return false;
   regen(data.seed);                                                   // rebuild the deterministic base world
   (data.cities||[]).forEach((sc,i)=>{ const c=WORLD.cities[i]; if(!c)return;
-    c.stock=sc.stock||c.stock;
-    c.builds=(sc.builds||[]).map(b=>{const nb=makeBuild(b.id,b.x,b.y); nb.ruined=!!b.ruined; return nb;});   // rehydrate (sprite re-derived, ruin state kept)
+    c.gold=sc.gold||0;
+    c.builds=(sc.builds||[]).map(b=>{const nb=makeBuild(b.id,b.x,b.y); nb.ruined=!!b.ruined; nb.stock=b.stock||{}; return nb;});  // rehydrate stock + ruin state
+    for(const h of c.houses) h.stock={};                                  // drop re-seeded household goods (saved goods live in builds)
     for(const b of c.builds) c.r=Math.max(c.r,Math.hypot(b.x-c.x,b.y-c.y)+1); });
   WORLD.layer=data.layer||'rody';
   document.querySelectorAll('.lyr').forEach(b=>b.classList.toggle('on',b.dataset.l===WORLD.layer));

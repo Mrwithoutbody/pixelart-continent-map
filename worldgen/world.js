@@ -252,8 +252,9 @@ function genWorld(seed){
     const all=c.houses.concat(c.builds);
     c.r=all.reduce((m,h)=>Math.max(m,Math.hypot(h.x-c.x,h.y-c.y)),1.5);
     c.minY=all.reduce((m,h)=>Math.min(m,h.y),c.y);
-    c.stock={ drewno:Math.round(18+c.pop/14), 'kamień':Math.round(8+c.pop/30), 'złoto':Math.round(12+c.pop/18),
-              'sól':60, 'jedzenie':40 };  // starting funds to build + a food/salt buffer until trade routes warm up
+    c.gold = Math.round(40 + c.pop/12);                                          // town treasury (money)
+    townGive(c,'drewno',Math.round(18+c.pop/14)); townGive(c,'kamień',Math.round(8+c.pop/30));
+    townGive(c,'sól',60); townGive(c,'jedzenie',40);   // build materials + a food/salt buffer until trade warms up
   }
 
   const {houses,relations,ties,legends,intrigues,events,guilds,guildRel,faiths,faithTension}=buildChronicle(cities,rng);
@@ -335,25 +336,21 @@ function genWorld(seed){
   // refiner input / is low on it / has free storage). Ore reaches smelters, timber/stone reach
   // builders, food reaches markets. cityCap/cityUsed/PROD are runtime globals (loaded after this).
   const CARGO_CAP=20, VAL=6;
-  // a good's gold value at a town: scarce + in demand (consumed here / food / salt) = dear
-  const consumes=(ci,res)=>cities[ci].builds.some(b=>!b.ruined&&recipesOf(b.id).some(r=>r.in.some(x=>x[0]===res)));
-  const priceAt=(ci,res)=>{ const have=(cities[ci].stock||{})[res]||0; let dem=1;
-    if(consumes(ci,res))dem+=3; if(res===FOOD)dem+=2; if(res==='sól')dem+=1;
-    return dem/(1+have*0.1); };                                  // demand per scarcity
-  const valueAt=(ci,res)=>priceAt(ci,res)*VAL;                   // gold per unit
+  const valueAt=(ci,res)=>townPrice(cities[ci],res)*VAL;          // gold/unit = keenest buyer's bid x scale
   // buy the home's biggest surplus on consignment (goods leave now, paid when sold)
-  const loadCargo=ci=>{ const c=cities[ci],st=c.stock||{}; let best=null,bv=4;
-    for(const r in st){ if(r==='złoto')continue; const reserve=(r===FOOD)?cityNeed(c)*8:0;
-      const avail=(st[r]||0)-reserve; if(avail>bv){bv=avail;best=r;} }
+  const loadCargo=ci=>{ const c=cities[ci]; const tally={};
+    for(const u of storesOf(c)) for(const r in u.stock){ if(u.stock[r]>0) tally[r]=(tally[r]||0)+u.stock[r]; }
+    let best=null,bv=4;
+    for(const r in tally){ const reserve=(r===FOOD)?cityNeed(c)*8:0; const avail=tally[r]-reserve; if(avail>bv){bv=avail;best=r;} }
     if(!best)return null; const qty=Math.min(CARGO_CAP,Math.floor(bv*0.5));
-    if(qty<=0)return null; st[best]-=qty; return {res:best,qty,from:ci}; };
-  // sell at the destination: it pays gold (only as much as it can afford & store); the seller earns it
-  const unloadCargo=(ci,cargo)=>{ if(!cargo)return; const c=cities[ci],st=c.stock||(c.stock={});
-    const free=Math.max(0,cityCap(c)-cityUsed(c)), val=valueAt(ci,cargo.res), gold=st['złoto']||0;
-    const afford=val>0?Math.floor(gold/val):cargo.qty;
+    if(qty<=0)return null; townTake(c,best,qty); return {res:best,qty,from:ci}; };
+  // sell at the destination: it pays gold (only as much as it can afford & store); the producer earns it
+  const unloadCargo=(ci,cargo)=>{ if(!cargo)return; const c=cities[ci];
+    const free=Math.max(0,cityCap(c)-cityUsed(c)); if(free<=0)return;
+    const val=valueAt(ci,cargo.res), gold=c.gold||0, afford=val>0?Math.floor(gold/val):cargo.qty;
     const qty=Math.min(cargo.qty,free,afford); if(qty<=0)return;
-    st[cargo.res]=(st[cargo.res]||0)+qty; st['złoto']=gold-qty*val;                  // buyer pays
-    if(cargo.from!=null){ const sc=cities[cargo.from]; sc.stock['złoto']=(sc.stock['złoto']||0)+qty*val; } };  // producer earns
+    const stored=townGive(c,cargo.res,qty); c.gold=gold-stored*val;                       // buyer pays for what it stored
+    if(cargo.from!=null) cities[cargo.from].gold=(cities[cargo.from].gold||0)+stored*val; };  // producer earns
   const destFor=(reach,cargo,rand)=>{ if(!cargo) return reach[(rand()*reach.length)|0];   // empty caravan -> wander
     let best=reach[0],bs=-1e9;
     for(const d of reach){ if(cityCap(cities[d])-cityUsed(cities[d])<=0)continue;          // no room there

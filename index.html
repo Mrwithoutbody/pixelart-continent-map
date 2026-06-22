@@ -187,11 +187,32 @@
   #chronicle .legendrow{display:flex;flex-wrap:wrap;gap:8px;font-size:10px;justify-content:center;
     padding:2px 0 4px;border-bottom:1px dotted #ffffff14}
   #chronicle .intrig{border-left-color:#a84fd0;color:var(--parch)}
+  /* per-building price chips + market (Rynek) table + price-layer picker */
+  #info .chips{display:flex;flex-wrap:wrap;gap:4px;margin-top:4px}
+  #info .pchip{font-size:10px;background:var(--panel2);border:2px solid var(--line);border-radius:2px;padding:2px 5px}
+  #info .pchip b{color:inherit}
+  #info .mkt{margin-top:3px}
+  #info .mrow{display:flex;align-items:center;gap:6px;padding:2px 0}
+  #info .mname{flex:0 0 58px;color:var(--parch2)}
+  #info .mbar{flex:1;height:8px;background:#141a10;border:2px solid var(--line);border-radius:2px;overflow:hidden}
+  #info .mbar > i{display:block;height:100%;background:var(--green)}
+  #info .mbar > i.hot{background:var(--red)}
+  #info .mprice{flex:0 0 28px;text-align:right;color:var(--green);font-weight:600}
+  #info .mprice.hot{color:var(--red)}
+  #info .mhave{flex:0 0 30px;text-align:right;color:var(--gold)}
+  #pricepick{position:fixed;top:12px;left:332px;z-index:14;display:none;flex-wrap:wrap;gap:4px;max-width:260px}
+  body:not([data-screen="game"]) #pricepick{display:none!important}
+  #pricepick .pg{font-family:var(--pix);font-size:11px;cursor:pointer;color:var(--parch2);
+    background:var(--panel2);border:2px solid var(--line);border-radius:2px;padding:3px 7px}
+  #pricepick .pg.on{color:var(--gold);background:var(--green);color:var(--ink)}
 </style>
 </head>
 <body data-screen="start">
 
 <canvas id="cv"></canvas>
+
+<!-- price-layer resource picker (shown only when the Ceny layer is active) -->
+<div id="pricepick"></div>
 
 <!-- ===== GAME HUD ===== -->
 <div id="hud" class="panel">
@@ -202,6 +223,7 @@
     <button class="btn sm lyr on" data-l="rody"   onclick="UI.setLayer('rody')">Rody</button>
     <button class="btn sm lyr"    data-l="gildie" onclick="UI.setLayer('gildie')">Gildie</button>
     <button class="btn sm lyr"    data-l="wiary"  onclick="UI.setLayer('wiary')">Wiary</button>
+    <button class="btn sm lyr"    data-l="ceny"   onclick="UI.setLayer('ceny')">Ceny</button>
   </div>
   <div class="row">
     <button class="btn sm" onclick="UI.regenInGame()">↻ nowa mapa</button>
