@@ -77,6 +77,8 @@ function pickBuild(bi){ const c=WORLD.cities[selected]; if(!c||!c.builds[bi])ret
 function unpickBuild(){ selBuild=null; updateInfo(); }
 
 // city panel: shared header + Miasto / Budynki tabs (building detail lives inside Budynki).
+// resource icon (Colonization-style) as an <img> for the panels; '' if none
+const resIcon=r=>(typeof ICON_URL!=='undefined'&&ICON_URL[r])?`<img class="ic" src="${ICON_URL[r]}" alt="">`:'';
 // name of an owning organisation (ród / gildia / religia)
 function ownerName(o){ if(!o)return '—';
   if(o.k==='gildia') return (WORLD.guilds[o.id]||{}).name||'Gildia';
@@ -93,7 +95,7 @@ function caravanPanel(){ const m=selMerchant; if(!m){clearCity();return;}
   if(!m.cargo){ body+=`<div class="li eco"><span>pusty — szuka towaru</span><span></span></div>`; }
   else { const from=WORLD.cities[m.cargo.from!=null?m.cargo.from:m.home], buyer=WORLD.bestBuyer(m.dest,m.cargo.res);
     body+=`<div class="sect">ładunek</div>`
-      +`<div class="stat"><span>${m.cargo.res}</span><b>${m.cargo.qty} szt</b></div>`
+      +`<div class="stat"><span>${resIcon(m.cargo.res)}${m.cargo.res}</span><b>${m.cargo.qty} szt</b></div>`
       +`<div class="stat"><span>kupiony w</span><b>${from?from.name:'—'}</b></div>`
       +`<div class="sect">sprzedaż</div>`
       +`<div class="stat"><span>kupiec</span><b>${buyer.build?buyer.build.name:'targ'} (${dest?dest.name:''})</b></div>`
@@ -104,7 +106,7 @@ function caravanPanel(){ const m=selMerchant; if(!m){clearCity();return;}
 // dwelling inspector
 function houseDetail(c,h){
   const keys=Object.keys(h.stock||{}).filter(r=>h.stock[r]>0);
-  const skl=keys.length? keys.map(r=>`<div class="li"><span>${r}</span><span>${Math.floor(h.stock[r])}</span></div>`).join('')
+  const skl=keys.length? keys.map(r=>`<div class="li"><span>${resIcon(r)}${r}</span><span>${Math.floor(h.stock[r])}</span></div>`).join('')
     : `<div class="li eco"><span>pusto</span><span></span></div>`;
   openPanel(`<div class="ihead"><span class="nm">${c.name}</span><span class="x" onclick="clearCity()">✕</span></div>`
    +`<div class="ibody">`
@@ -192,7 +194,7 @@ function recipeRows(b,c){ const recs=recipesOf(b.id); let h='';
     return `<div class="stat"><span>${lhs}</span><b>→ ${r.out[1]} ${r.out[0]}/turę</b></div>`; }).join('');
   const keys=Object.keys(b.stock||{}).filter(r=>b.stock[r]>0);
   h+=`<div class="sect">skład budynku</div>`+(keys.length
-    ? keys.map(r=>`<div class="li"><span>${r}</span><span>${Math.floor(b.stock[r])}</span></div>`).join('')
+    ? keys.map(r=>`<div class="li"><span>${resIcon(r)}${r}</span><span>${Math.floor(b.stock[r])}</span></div>`).join('')
     : `<div class="li eco"><span>pusto</span><span></span></div>`);
   return h; }
 // this building's own bid/ask prices (pure exchange) — color-coded, no raw math thrust at the player
@@ -200,7 +202,7 @@ function priceChips(c,b){ const recs=recipesOf(b.id); const buys=new Set(),sells
   recs.forEach(r=>{ r.in.forEach(x=>buys.add(x[0])); if(r.out)sells.add(r.out[0]); });
   if(!buys.size&&!sells.size)return '';
   const chip=(r,kind)=>{ const p=priceB(b,r); const hot=p>=2; const col=kind==='buy'?(hot?'var(--red)':'var(--parch2)'):(hot?'var(--gold)':'var(--green)');
-    return `<span class="pchip" style="color:${col}">${kind==='buy'?'kupuje':'sprzedaje'} ${r} <b>${p.toFixed(1)}</b></span>`; };
+    return `<span class="pchip" style="color:${col}">${kind==='buy'?'kupuje':'sprzedaje'} ${resIcon(r)}${r} <b>${p.toFixed(1)}</b></span>`; };
   return `<div class="sect">ceny budynku</div><div class="chips">`
     +[...buys].map(r=>chip(r,'buy')).join('')+[...sells].map(r=>chip(r,'sell')).join('')+`</div>`; }
 // rebuild a ruined building, paying its build cost again from the town
@@ -214,7 +216,7 @@ function prodRows(c){
   const out=cityOutputs(c), ok=Object.keys(out);
   const prod = ok.length ? ok.map(r=>`<div class="li eco"><span>${r}</span><span>+${out[r]}/turę</span></div>`).join('') : '';
   const st=townGoods(c), sk=Object.keys(st).filter(r=>st[r]>0);
-  const stock = sk.length ? sk.map(r=>`<div class="li"><span>${r}</span><span>${Math.floor(st[r])}</span></div>`).join('') : `<div class="li eco"><span>pusto</span><span></span></div>`;
+  const stock = sk.length ? sk.map(r=>`<div class="li"><span>${resIcon(r)}${r}</span><span>${Math.floor(st[r])}</span></div>`).join('') : `<div class="li eco"><span>pusto</span><span></span></div>`;
   const cap=cityCap(c), used=Math.floor(cityUsed(c)), pct=cap?Math.min(100,Math.round(used/cap*100)):0;
   return (prod?`<div class="sect">produkcja</div><div class="list">${prod}</div>`:'')
        + `<div class="sect">magazyn miasta <span class="capn${pct>=90?' full':''}">${used}/${cap}</span></div>`
@@ -227,7 +229,7 @@ function rynekTab(c){
   const st=townGoods(c);
   const rows=goods.map(r=>{ const price=townPrice(c,r), have=Math.floor(st[r]||0);
     const pct=Math.min(100,Math.round(price/5*100)), hot=price>=2;
-    return `<div class="mrow"><span class="mname">${r}</span>`
+    return `<div class="mrow"><span class="mname">${resIcon(r)}${r}</span>`
       +`<span class="mbar"><i class="${hot?'hot':''}" style="width:${pct}%"></i></span>`
       +`<span class="mprice${hot?' hot':''}">${price.toFixed(1)}</span>`
       +`<span class="mhave">${have}</span></div>`; }).join('');
@@ -324,7 +326,12 @@ function render(){
       const z=cam.zoom,[sx,sy]=w2s(mx,my), top=Math.round(sy-(spr.sh+1)*z);
       ctx.fillStyle=OUTL; ctx.fillRect(Math.round(sx),top,Math.max(1,Math.round(z*0.5)),Math.ceil(z*3));
       ctx.fillStyle=FACTIONS[m.f].flag; ctx.fillRect(Math.round(sx),top,Math.ceil(z*2),Math.ceil(z*1.5));
-    }}
+    }
+    // the cargo it carries, as a floating icon above it (Colonization-style visible transport)
+    if(cam.zoom>=2 && m.cargo && ICON_SPR[m.cargo.res]){ const ic=ICON_SPR[m.cargo.res],[sx,sy]=w2s(mx,my);
+      const IC=Math.max(8,Math.round(cam.zoom*1.8)), iy=Math.round(sy-(spr.sh+1)*cam.zoom-IC);
+      ctx.fillStyle='rgba(18,22,14,0.55)'; ctx.fillRect(Math.round(sx-IC/2)-1,iy-1,IC+2,IC+2);   // backing chip
+      ctx.drawImage(ic.img,0,0,ic.sw,ic.sh, Math.round(sx-IC/2),iy, IC,IC); }}
   if(selected!=null){const c=WORLD.cities[selected];const[sx,sy]=w2s(c.x,c.y);
     const r=Math.round((c.r+4)*cam.zoom), lw=Math.max(3,Math.round(cam.zoom*1.1));
     ctx.strokeStyle='#ffe066';ctx.lineWidth=lw;ctx.lineJoin='miter';ctx.setLineDash([]);

@@ -37,4 +37,5 @@ function buildSprites(){
   SPR.mountains=[makeMountain(16), makeMountain(20), makeMountain(26)];
   // --- units + icons ---
   SPR.cart=bake(UNIT_SPRITES.cart); SPR.ship=bake(UNIT_SPRITES.ship); SPR.anchor=bake(UNIT_SPRITES.anchor);
+  if(typeof bakeIcons==='function') bakeIcons();   // resource icons (Colonization-style)
 }
