@@ -11,6 +11,7 @@ const ECON={
   ruinLimit:200,         // ticks of sustained famine before a building is abandoned (long + recoverable)
   cargoCap:100,              // caravan load size (Colonization 100-unit)
   caravanCapital:120, caravanMinGold:8,   // the town gives this purse when it creates a caravan — that's the only handout
+  seaPrice:4,                // overseas market at PORTS: buys any good, unlimited, at this poor price (a release valve)
   caravansPerTown:1,         // caravans a town outfits from its treasury at world start (~1/town)
   buildEvery:100, buildReserve:50,          // autonomous town growth: try a build every N ticks if treasury > reserve
   caravanEvery:40, caravanGold:110, fleetPerTown:3,   // a rich market town spawns a caravan; fleet capped at fleetPerTown*towns
