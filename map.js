@@ -162,26 +162,44 @@ function carveRivers(height,biome,cost,SL){
   }
   if(nlab<=1) return;
   let ocean=0; for(let i=1;i<nlab;i++) if(size[i]>size[ocean]) ocean=i;
-  // 2) BFS from every ocean tile across land -> nearest-sea distance + parent path
-  const dist=new Int32Array(N).fill(-1), par=new Int32Array(N).fill(-1);
-  let head=0,tail=0;
-  for(let i=0;i<N;i++) if(label[i]===ocean){ dist[i]=0; par[i]=i; q[tail++]=i; }
-  while(head<tail){ const u=q[head++], x=u%W,y=(u/W)|0, nd=dist[u]+1;
-    const go=v=>{ if(isW(v)||dist[v]>=0)return; dist[v]=nd; par[v]=u; q[tail++]=v; };
-    if(x>0)go(u-1); if(x<W-1)go(u+1); if(y>0)go(u-W); if(y<H-1)go(u+W);
+
+  // 2) weighted least-cost field from the sea over land (indexed binary heap / Dijkstra).
+  //    cost is LOW in valleys (height near sea level) and carries per-tile noise, so the
+  //    parent tree follows lowland and wiggles; 8-neighbour moves avoid axis-staircasing.
+  //    Lakes sharing a valley merge into the same branch -> tributaries, not parallel lines.
+  const dist=new Float64Array(N).fill(Infinity), par=new Int32Array(N).fill(-1);
+  const pos=new Int32Array(N), hidx=new Int32Array(N+1), hcost=new Float64Array(N+1); let hn=0;
+  const rnd=i=>{ let h=(i*2654435761)>>>0; h^=h>>>15; h=Math.imul(h,2246822519); h^=h>>>13; return (h>>>0)/4294967296; };
+  const swap=(a,b)=>{ const ti=hidx[a];hidx[a]=hidx[b];hidx[b]=ti; const tc=hcost[a];hcost[a]=hcost[b];hcost[b]=tc;
+    pos[hidx[a]]=a; pos[hidx[b]]=b; };
+  const up=c=>{ while(c>1){const p=c>>1; if(hcost[p]<=hcost[c])break; swap(p,c); c=p;} };
+  const down=c=>{ for(;;){ let l=c*2,r=l+1,m=c; if(l<=hn&&hcost[l]<hcost[m])m=l; if(r<=hn&&hcost[r]<hcost[m])m=r; if(m===c)break; swap(m,c); c=m; } };
+  const heapAdd=(idx,d)=>{ if(pos[idx]){ if(d<hcost[pos[idx]]){hcost[pos[idx]]=d; up(pos[idx]);} return; }
+    hn++; hidx[hn]=idx; hcost[hn]=d; pos[idx]=hn; up(hn); };
+  const heapPop=()=>{ const idx=hidx[1]; swap(1,hn); hn--; pos[idx]=0; if(hn)down(1); return idx; };
+  for(let i=0;i<N;i++) if(label[i]===ocean){ dist[i]=0; par[i]=i; heapAdd(i,0); }
+  const NB=[-1,0, 1,0, 0,-1, 0,1, -1,-1, 1,-1, -1,1, 1,1];
+  while(hn){ const u=heapPop(), du=dist[u], x=u%W, y=(u/W)|0;
+    for(let k=0;k<16;k+=2){ const nx=x+NB[k], ny=y+NB[k+1];
+      if(nx<0||ny<0||nx>=W||ny>=H)continue; const v=ny*W+nx; if(isW(v))continue;
+      const diag=(NB[k]&&NB[k+1])?1.4142:1;
+      const w=diag*(1 + 8*Math.max(0,height[v]-SL) + 0.9*rnd(v));   // cheap in valleys, costly uphill
+      const nd=du+w; if(nd<dist[v]){ dist[v]=nd; par[v]=u; heapAdd(v,nd); } }
   }
-  // 3) per sizable lake, pick its shore tile closest to the sea, carve the channel back
+
+  // 3) per sizable lake: pick the shore tile with the cheapest route, carve it back to the sea.
   const MINSZ=5, SLh=SL-0.05;
   const dig=i=>{ if(biome[i]>BIOME.SHALLOW)biome[i]=BIOME.SHALLOW; if(height[i]>SLh)height[i]=SLh; cost[i]=COST[biome[i]]; };
-  const digWide=i=>{ const x=i%W,y=(i/W)|0; dig(i); if(x>0)dig(i-1); if(x<W-1)dig(i+1); if(y>0)dig(i-W); if(y<H-1)dig(i+W); };
-  const best=new Int32Array(nlab).fill(-1);    // shore-land tile nearest the sea, per lake
+  const digWide=i=>{ const x=i%W,y=(i/W)|0; dig(i);                 // 2-wide: fill the diagonal gap
+    if(x<W-1)dig(i+1); if(y<H-1)dig(i+W); if(x<W-1&&y<H-1)dig(i+W+1); };
+  const best=new Int32Array(nlab).fill(-1);
   for(let i=0;i<N;i++){ if(!isW(i)||label[i]===ocean)continue; const L=label[i]; if(size[L]<MINSZ)continue;
     const x=i%W,y=(i/W)|0;
-    const chk=v=>{ if(dist[v]<0)return; if(best[L]<0||dist[v]<dist[best[L]]) best[L]=v; };
+    const chk=v=>{ if(dist[v]===Infinity)return; if(best[L]<0||dist[v]<dist[best[L]]) best[L]=v; };
     if(x>0)chk(i-1); if(x<W-1)chk(i+1); if(y>0)chk(i-W); if(y<H-1)chk(i+W);
   }
   for(let L=0;L<nlab;L++){ if(L===ocean||best[L]<0)continue;
-    let t=best[L]; while(par[t]!==t){ digWide(t); t=par[t]; }   // shore -> sea, becomes water
+    let t=best[L]; while(par[t]!==t){ digWide(t); t=par[t]; }       // shore -> sea, becomes water
   }
 }
 
