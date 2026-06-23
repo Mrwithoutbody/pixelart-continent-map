@@ -54,10 +54,11 @@ function carveRivers(height,biome,cost,SL){
     if(x>0)chk(i-1); if(x<W-1)chk(i+1); if(y>0)chk(i-W); if(y<H-1)chk(i+W);
   }
   for(let L=0;L<nlab;L++){ if(L===ocean||best[L]<0)continue;
-    const base=rnd(best[L]^0x55)<0.6?2:1;                           // river half-width: normal 3px, wide ~60% 5px
+    const maxR=rnd(best[L]^0x55)<0.6?4:3;                           // mouth half-width (~60% of rivers a touch wider)
     const path=[]; let t=best[L]; while(par[t]!==t){ path.push(t); t=par[t]; }   // shore -> sea (last tiles = the mouth)
-    for(let k=0;k<path.length;k++){ const fromMouth=path.length-1-k;
-      digR(path[k], base + Math.min(3,Math.max(0,4-fromMouth))); }  // delta: fan the last ~4 tiles into the sea (centered)
+    const len=path.length;
+    for(let k=0;k<len;k++){ const prog=len>1?k/(len-1):1;           // 0 at the source, 1 at the mouth
+      digR(path[k], Math.round(prog*prog*maxR)); }                  // thin stream upstream, widening to a delta at the sea
   }
 }
 
