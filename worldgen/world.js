@@ -58,7 +58,7 @@ function carveRivers(height,biome,cost,SL){
     const path=[]; let t=best[L]; while(par[t]!==t){ path.push(t); t=par[t]; }   // shore -> sea (last tiles = the mouth)
     const len=path.length;
     for(let k=0;k<len;k++){ const prog=len>1?k/(len-1):1;           // 0 at the source, 1 at the mouth
-      digR(path[k], Math.round(prog*prog*maxR)); }                  // thin stream upstream, widening to a delta at the sea
+      digR(path[k], Math.max(1,Math.round(prog*prog*maxR))); }      // min 3px navigable water upstream, widening to the mouth
   }
 }
 
